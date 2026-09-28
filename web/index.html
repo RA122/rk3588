@@ -1,0 +1,3064 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>云帆AI Box 控制台</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        rkblue: '#00d2ff',
+                        rkdark: '#0f172a',
+                        glass: 'rgba(30, 41, 59, 0.6)'
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Phosphor Icons (轻量好看的图标) -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0b1120;
+            background-image:
+                radial-gradient(at 0% 0%, rgba(15, 23, 42, 1) 0px, transparent 50%),
+                radial-gradient(at 100% 0%, rgba(20, 35, 60, 1) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(15, 23, 42, 1) 0px, transparent 50%),
+                radial-gradient(at 0% 100%, rgba(0, 50, 80, 0.4) 0px, transparent 50%);
+            color: #f8fafc;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.4);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.3);
+        }
+
+        .neon-text {
+            text-shadow: 0 0 12px rgba(0, 210, 255, 0.5);
+        }
+
+        .sidebar-item {
+            transition: all 0.2s ease;
+        }
+
+        .sidebar-item.active {
+            background: linear-gradient(90deg, rgba(0, 210, 255, 0.15) 0%, transparent 100%);
+            border-left: 3px solid #00d2ff;
+            color: #fff;
+        }
+
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        /* 告警图片悬浮动画 */
+        .alarm-card:hover .alarm-overlay {
+            opacity: 1;
+        }
+    </style>
+</head>
+
+<body x-data="aiBoxApp()" class="flex h-screen w-full">
+
+    <!-- Sidebar 侧边栏 -->
+    <aside class="w-64 glass-panel border-r border-slate-800/50 flex flex-col h-full z-20 flex-shrink-0">
+        <div class="p-6 flex items-center gap-3 border-b border-slate-800/50">
+            <div
+                class="w-10 h-10 rounded-xl bg-gradient-to-tr from-rkblue to-blue-600 flex items-center justify-center shadow-[0_0_15px_rgba(0,210,255,0.4)]">
+                <i class="ph ph-cpu text-2xl text-white"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold tracking-tight">云帆边缘AI监测</h1>
+                <p class="text-slate-500 text-[10px] uppercase font-semibold">EDGE AI EDITION</p>
+            </div>
+        </div>
+
+        <nav class="flex-1 py-6 space-y-2 px-4">
+            <template x-for="menu in menus">
+                <button @click="currentTab = menu.id"
+                    :class="{'active': currentTab === menu.id, 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/30': currentTab !== menu.id}"
+                    class="sidebar-item w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium border-l-3 border-transparent">
+                    <i :class="menu.icon" class="text-xl"></i>
+                    <span x-text="menu.name"></span>
+                </button>
+            </template>
+        </nav>
+
+        <div class="p-6 border-t border-slate-800/50">
+            <div class="flex items-center gap-3">
+                <div class="relative flex h-3 w-3 shrink-0">
+                    <!-- 在线: 绿色脉冲 / 离线: 红色常亮 (脉冲自动停掉) -->
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                        :class="status.engine_online === false ? 'bg-red-400 hidden' : 'bg-green-400'"></span>
+                    <span class="relative inline-flex rounded-full h-3 w-3" :class="status.engine_online === false
+                              ? 'bg-red-500 shadow-[0_0_8px_#ef4444]'
+                              : 'bg-green-500 shadow-[0_0_8px_#22c55e]'"></span>
+                </div>
+                <div class="text-xs min-w-0 flex-1">
+                    <p class="font-semibold" :class="status.engine_online === false ? 'text-red-400' : 'text-slate-300'"
+                        x-text="status.engine_online === false ? '推理引擎 离线' : '推理引擎 在线'"></p>
+                    <p class="text-slate-500 mt-0.5">已运行: <span x-text="status.uptime">2h 15m</span></p>
+                </div>
+                <!-- 一键重启引擎按钮 -->
+                <button @click="restartEngine()" title="一键重启推理引擎 (进程会自退，由看护进程拉起)"
+                    class="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-slate-500 hover:text-rkblue hover:bg-slate-800/60 transition active:scale-95">
+                    <i class="ph ph-arrows-clockwise text-base"></i>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content 主内容区 -->
+    <main class="flex-1 flex flex-col h-full overflow-hidden relative">
+
+        <!-- 顶部装饰栏 -->
+        <header
+            class="h-16 flex-shrink-0 flex items-center justify-between px-8 border-b border-slate-800/30 bg-slate-900/20 backdrop-blur-sm z-10">
+            <h2 class="text-lg font-semibold text-slate-200" x-text="menus.find(m => m.id === currentTab).name"></h2>
+            <div class="flex items-center gap-4">
+                <!-- 当前登录用户: 点头像看信息 / 退出 -->
+                <div class="relative" @click.outside="showUserMenu = false">
+                    <button @click="showUserMenu = !showUserMenu" title="当前登录用户"
+                        class="flex items-center gap-2 text-slate-400 hover:text-white transition px-2 py-1.5 rounded-lg hover:bg-slate-800">
+                        <i class="ph ph-user-circle text-xl"></i>
+                        <span class="text-xs font-semibold max-w-[80px] truncate"
+                            x-text="currentUser ? currentUser.username : '未登录'"></span>
+                    </button>
+
+                    <div x-show="showUserMenu" x-transition.opacity style="display: none;"
+                        class="absolute top-10 right-0 w-60 glass-panel border border-slate-700/50 rounded-xl shadow-2xl z-[100] overflow-hidden text-left">
+                        <div
+                            class="px-4 py-3 border-b border-slate-700/50 bg-slate-800/90 flex items-center gap-3">
+                            <i class="ph ph-user-circle text-2xl text-rkblue"></i>
+                            <div class="min-w-0">
+                                <div class="text-sm font-bold text-slate-200 truncate"
+                                    x-text="currentUser ? currentUser.username : '-'"></div>
+                                <div class="text-[10px] text-slate-500">已登录</div>
+                            </div>
+                        </div>
+                        <div class="px-4 py-2.5 space-y-1.5 text-[11px]">
+                            <div class="flex justify-between gap-2">
+                                <span class="text-slate-500 shrink-0">登录时间</span>
+                                <span class="text-slate-300 font-mono text-right"
+                                    x-text="currentUser ? formatLoginTime(currentUser.login_at) : '-'"></span>
+                            </div>
+                            <div class="flex justify-between gap-2">
+                                <span class="text-slate-500 shrink-0">有效期</span>
+                                <span class="text-slate-300"
+                                    x-text="currentUser ? (currentUser.expires_hours + ' 小时') : '-'"></span>
+                            </div>
+                        </div>
+                        <div class="border-t border-slate-800 p-2">
+                            <button @click="doLogout()"
+                                class="w-full text-left px-2 py-2 text-xs text-red-400 hover:bg-red-500/10 rounded-lg transition flex items-center gap-2">
+                                <i class="ph ph-sign-out"></i> 退出登录
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 通知中心 -->
+                <div class="relative">
+                    <button @click="showNotifications = !showNotifications" @click.outside="showNotifications = false"
+                        class="text-slate-400 hover:text-white transition relative block">
+                        <i class="ph ph-bell text-xl"></i>
+                        <span x-show="notifications.filter(n => !n.read).length > 0" style="display: none;"
+                            class="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                            <span
+                                class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                        </span>
+                    </button>
+                    <!-- 下拉面板 -->
+                    <div x-show="showNotifications" x-transition.opacity style="display: none;"
+                        class="absolute top-10 right-0 w-80 glass-panel border border-slate-700/50 rounded-xl shadow-2xl z-[100] overflow-hidden text-left">
+                        <div
+                            class="px-4 py-3 border-b border-slate-700/50 flex justify-between items-center bg-slate-800/90">
+                            <h4 class="text-sm font-bold text-slate-200">系统通知</h4>
+                            <div class="flex gap-3">
+                                <button @click="markAllAsRead"
+                                    class="text-xs text-rkblue hover:text-white transition">全部已读</button>
+                                <button @click="clearNotifications"
+                                    class="text-xs text-slate-400 hover:text-red-400 transition">清空</button>
+                            </div>
+                        </div>
+                        <div class="max-h-72 overflow-y-auto custom-scrollbar bg-slate-900/80">
+                            <template x-if="notifications.length === 0">
+                                <div class="py-6 text-center text-xs text-slate-500">暂无任何系统通知</div>
+                            </template>
+                            <template x-for="n in notifications" :key="n.id">
+                                <div @click="openNotification(n)"
+                                    class="px-4 py-3 border-b border-slate-800/50 hover:bg-slate-800/60 transition flex gap-3 cursor-pointer group relative">
+                                    <div class="mt-0.5 relative">
+                                        <i x-show="n.type==='info'" class="ph ph-info text-blue-400 text-lg"></i>
+                                        <i x-show="n.type==='warning'" class="ph ph-warning text-amber-400 text-lg"></i>
+                                        <i x-show="n.type==='error'"
+                                            class="ph ph-warning-circle text-red-400 text-lg"></i>
+                                        <span x-show="!n.read"
+                                            class="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full shadow-[0_0_5px_rgba(239,68,68,0.8)]"></span>
+                                    </div>
+                                    <div class="flex-1" :class="n.read ? 'opacity-50' : 'opacity-100'">
+                                        <div class="text-xs font-bold text-slate-200 mb-0.5 group-hover:text-rkblue transition"
+                                            x-text="n.title"></div>
+                                        <div class="text-[10px] text-slate-400 mb-1 leading-relaxed line-clamp-1"
+                                            x-text="n.details"></div>
+                                        <div class="text-[9px] text-slate-500 font-mono" x-text="n.time"></div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- 内容滚动区 -->
+        <!-- 所有 tab 共用这一个滚动容器, 所以切换 tab 时必须手动回到顶部 -->
+        <div x-ref="tabScroll" class="flex-1 overflow-y-auto p-8 relative z-0">
+
+            <!-- ====== TAB 1: 仪表盘 Dashboard ====== -->
+            <div x-show="currentTab === 'dashboard'" x-transition.opacity.duration.300ms
+                class="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full">
+
+                <!-- Left Column (30% -> col-span-4) -->
+                <div class="lg:col-span-4 h-full">
+                    <div class="glass-panel p-5 rounded-2xl flex flex-col h-full min-h-[400px]">
+
+                        <div class="mb-4">
+                            <h3 class="text-slate-300 font-semibold mb-3 flex items-center gap-2 text-sm"><i
+                                    class="ph ph-chart-line text-rkblue"></i> NPU / CPU 算力趋势</h3>
+                            <div class="h-48 w-full">
+                                <canvas id="sysChart"></canvas>
+                            </div>
+                        </div>
+
+                        <hr class="border-slate-700/50 my-4">
+
+                        <div class="space-y-5 flex-1">
+                            <h3 class="text-slate-300 font-semibold mb-2 flex items-center gap-2 text-sm"><i
+                                    class="ph ph-cpu text-rkblue"></i> 核心负载</h3>
+
+                            <div>
+                                <div class="flex justify-between text-xs mb-1.5"><span class="text-slate-400">RKNN
+                                        NPU</span><span class="font-bold"
+                                        :class="status.npu > 80 ? 'text-red-400' : 'text-rkblue'"
+                                        x-text="status.npu + '%'">0%</span></div>
+                                <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                                    <div class="h-full rounded-full transition-all duration-300 relative"
+                                        :class="status.npu > 80 ? 'bg-gradient-to-r from-red-500 to-red-400 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 'bg-gradient-to-r from-blue-500 to-rkblue'"
+                                        :style="`width: ${status.npu}%`"></div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div class="flex justify-between text-xs mb-1.5"><span class="text-slate-400">ARM
+                                        Cortex-A76/A55</span><span class="font-bold"
+                                        :class="status.cpu > 80 ? 'text-red-400' : 'text-purple-400'"
+                                        x-text="status.cpu + '%'">0%</span></div>
+                                <div class="w-full bg-slate-800 rounded-full h-2">
+                                    <div class="h-full rounded-full transition-all duration-300"
+                                        :class="status.cpu > 80 ? 'bg-gradient-to-r from-red-500 to-red-400' : 'bg-gradient-to-r from-purple-500 to-pink-500'"
+                                        :style="`width: ${status.cpu}%`"></div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div class="flex justify-between text-xs mb-1.5"><span
+                                        class="text-slate-400">系统内存</span><span class="font-bold"
+                                        :class="status.memory > 80 ? 'text-red-400' : 'text-emerald-400'"
+                                        x-text="status.memory + '%'">0%</span></div>
+                                <div class="w-full bg-slate-800 rounded-full h-2">
+                                    <div class="h-full rounded-full transition-all duration-300"
+                                        :class="status.memory > 80 ? 'bg-gradient-to-r from-red-500 to-red-400' : 'bg-gradient-to-r from-emerald-500 to-teal-400'"
+                                        :style="`width: ${status.memory}%`"></div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div class="flex justify-between text-xs mb-1.5">
+                                    <span class="text-slate-400">SoC 核心温度</span>
+                                    <span class="font-bold font-mono"
+                                        :class="status.temp > 80 ? 'text-red-400' : (status.temp > 60 ? 'text-amber-400' : 'text-green-400')"
+                                        x-text="(status.temp ? status.temp.toFixed(1) : '0.0') + ' °C'">0.0 °C</span>
+                                </div>
+                                <div class="w-full bg-slate-800 rounded-full h-2">
+                                    <div class="h-full rounded-full transition-all duration-300"
+                                        :class="status.temp > 80 ? 'bg-gradient-to-r from-red-500 to-red-400 shadow-[0_0_8px_rgba(239,68,68,0.5)]' : (status.temp > 60 ? 'bg-gradient-to-r from-amber-500 to-orange-400' : 'bg-gradient-to-r from-green-500 to-emerald-400')"
+                                        :style="`width: ${Math.min(status.temp || 0, 100)}%`"></div>
+                                </div>
+                            </div>
+
+                            <div
+                                class="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl mt-4 flex gap-2 items-start">
+                                <i class="ph ph-info text-blue-400 text-lg mt-0.5"></i>
+                                <div class="text-[11px] text-blue-200 leading-relaxed">
+                                    NPU 算力集群运行良好。共接入 <span class="font-bold text-white"
+                                        x-text="config.cameras ? config.cameras.length : 0">0</span> 路流。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column (70% -> col-span-8) -->
+                <div class="lg:col-span-8 flex flex-col gap-6 h-full">
+
+                    <!-- 顶部 3 个统计卡片 (more compact) -->
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <div class="glass-panel p-4 rounded-2xl">
+                            <div class="flex justify-between items-start mb-1">
+                                <div>
+                                    <p class="text-slate-400 text-xs font-medium">接入视频流</p>
+                                    <h3 class="text-2xl font-bold text-slate-100 mt-1"
+                                        x-text="config.cameras ? config.cameras.length : 0">0</h3>
+                                </div>
+                                <div class="p-1.5 bg-blue-500/10 rounded-lg text-blue-400"><i
+                                        class="ph ph-video-camera text-lg"></i></div>
+                            </div>
+                            <p class="text-[10px] text-green-400 mt-2 flex items-center gap-1"><i
+                                    class="ph ph-trend-up"></i> 运行稳定</p>
+                        </div>
+                        <!-- 合并后的"总告警数"卡: 不再按类别硬编码 .includes() 过滤,
+                             直接显示 alarms.length (前端已轮询 /api/alarms 拿到的全部告警),
+                             等同于"所有类别总和的报警数量". -->
+                        <div class="glass-panel p-4 rounded-2xl relative overflow-hidden group">
+                            <div
+                                class="absolute inset-0 bg-gradient-to-br from-amber-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                            </div>
+                            <div class="flex justify-between items-start mb-1 relative z-10">
+                                <div>
+                                    <p class="text-slate-400 text-xs font-medium">总告警数</p>
+                                    <h3 class="text-2xl font-bold text-slate-100 mt-1" x-text="alarms.length">0</h3>
+                                </div>
+                                <div class="p-1.5 bg-amber-500/10 rounded-lg text-amber-400"><i
+                                        class="ph ph-warning-circle text-lg"></i></div>
+                            </div>
+                            <p class="text-[10px] text-slate-400 mt-2 flex items-center gap-1 relative z-10"><i
+                                    class="ph ph-stack"></i> 所有类别总和</p>
+                        </div>
+                        <div class="glass-panel p-4 rounded-2xl">
+                            <div class="flex justify-between items-start mb-1">
+                                <div>
+                                    <p class="text-slate-400 text-xs font-medium">MQTT 云端连接</p>
+                                    <h3 class="text-lg font-bold mt-2"
+                                        :class="isMqttActive() ? 'text-green-400' : 'text-slate-400'"
+                                        x-text="isMqttActive() ? '已连接' : '已禁用'">
+                                    </h3>
+                                </div>
+                                <div class="p-1.5 rounded-lg transition-colors"
+                                    :class="isMqttActive() ? 'bg-green-500/10 text-green-400' : 'bg-slate-800 text-slate-500'">
+                                    <i class="ph text-lg"
+                                        :class="isMqttActive() ? 'ph-cloud-check' : 'ph-cloud-slash'"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 实时告警画廊 (Recent Alerts Gallery) -->
+                    <div class="glass-panel p-5 rounded-2xl flex-1 flex flex-col h-full overflow-hidden">
+                        <div class="flex justify-between items-center mb-4 shrink-0">
+                            <h3 class="text-slate-300 font-semibold flex items-center gap-2"><i
+                                    class="ph ph-images text-rkblue"></i> AI 实时告警抓拍画廊</h3>
+                            <button @click="currentTab = 'alarms'"
+                                class="text-xs text-rkblue hover:text-white transition">查看全部历史 &rarr;</button>
+                        </div>
+
+                        <!-- 画廊网格 -->
+                        <div
+                            class="grid grid-cols-2 md:grid-cols-3 gap-3 overflow-y-auto custom-scrollbar flex-1 pr-1 h-full content-start">
+                            <template x-for="(alarm, i) in alarms.slice(0, 9)" :key="i">
+                                <div @click="openImagePreview(alarm)"
+                                    class="rounded-xl overflow-hidden relative group cursor-pointer border border-slate-700/50 hover:border-rkblue/50 transition-all hover:scale-[1.02] shadow-lg">
+                                    <div class="aspect-[4/3] bg-slate-900 relative overflow-hidden">
+                                        <img :src="alarm.image"
+                                            class="w-full h-full object-cover opacity-90 group-hover:scale-105 transition-transform duration-500" />
+
+                                        <!-- 悬浮居中【点击放大】按钮 -->
+                                        <div
+                                            class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10">
+                                            <span
+                                                class="bg-rkblue text-slate-900 text-xs font-bold px-3.5 py-1.5 rounded-full flex items-center gap-1.5 shadow-[0_0_15px_rgba(0,210,255,0.6)]">
+                                                <i class="ph ph-magnifying-glass-plus text-sm"></i> 点击放大查看
+                                            </span>
+                                        </div>
+
+                                        <!-- 顶角类别 Label Badge：单帧多类别时堆叠展示多个 badge -->
+                                        <div
+                                            class="absolute top-2 left-2 z-20 flex flex-col gap-1 items-start max-w-[80%]">
+                                            <template x-for="badge in getCategoryBadges(alarm)"
+                                                :key="badge.name + alarm.image">
+                                                <span
+                                                    class="px-2 py-0.5 text-[10px] font-bold rounded shadow-md backdrop-blur-sm whitespace-nowrap"
+                                                    :class="badge.bg" x-text="badge.name">
+                                                </span>
+                                            </template>
+                                        </div>
+                                    </div>
+                                    <!-- 底部固定信息 Bar -->
+                                    <div
+                                        class="p-2 bg-slate-900/90 border-t border-slate-800 flex justify-between items-center text-xs">
+                                        <div class="text-slate-300 font-semibold truncate text-[11px]"
+                                            x-text="'通道: ' + alarm.camera"></div>
+                                        <div class="text-[9px] text-slate-400 font-mono"
+                                            x-text="alarm.time.split('_').pop().replace('.jpg','') || alarm.time"></div>
+                                    </div>
+                                </div>
+                            </template>
+                            <template x-if="alarms.length === 0">
+                                <div
+                                    class="col-span-full h-full min-h-[200px] flex flex-col items-center justify-center text-slate-500">
+                                    <i class="ph ph-image-square text-4xl mb-3 opacity-30"></i>
+                                    <p class="text-xs">暂无告警抓拍数据，AI 监控系统正常运行中</p>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- ====== TAB 2: 流媒体监控 Live View ====== -->
+            <div x-show="currentTab === 'live'" x-transition.opacity.duration.300ms style="display: none;">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                    <template x-for="cam in config.cameras" :key="cam.id">
+                        <div
+                            class="glass-panel rounded-xl overflow-hidden border border-slate-700/50 hover:border-rkblue/50 transition-all hover:shadow-[0_0_20px_rgba(0,210,255,0.2)]">
+
+                            <!-- 视频区域 - 点击放大 -->
+                            <div @click="openLivePreview(cam)"
+                                class="aspect-video bg-slate-900 relative flex items-center justify-center overflow-hidden group cursor-pointer">
+
+                                <!-- 在线/离线状态指示 -->
+                                <div class="absolute top-3 left-3 z-30 flex items-center gap-1.5 px-2 py-1 rounded-full backdrop-blur-sm text-[10px] font-bold"
+                                    :class="camStatus[cam.id] === false ? 'bg-slate-900/80 text-slate-400' : 'bg-emerald-900/60 text-emerald-400'">
+                                    <span class="w-1.5 h-1.5 rounded-full"
+                                        :class="camStatus[cam.id] === false ? 'bg-slate-500' : 'bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.8)]'"></span>
+                                    <span x-text="camStatus[cam.id] === false ? '离线' : 'LIVE'"></span>
+                                </div>
+
+                                <!-- 摄像头名称 (悬浮右上角) -->
+                                <div
+                                    class="absolute top-3 right-3 z-30 px-2 py-1 bg-black/60 backdrop-blur-sm text-slate-200 text-xs font-bold rounded shadow-md">
+                                    <span x-text="cam.name"></span>
+                                </div>
+
+                                <!-- 右下角全屏按钮: 原来是整块 hover 遮罩盖住画面提示"点击放大",
+                                     既挡视线, 又得先 hover 才看得见. 改成常驻的小图标. -->
+                                <button @click.stop="openLivePreview(cam)" title="全局全屏"
+                                    class="absolute bottom-3 right-3 z-30 w-9 h-9 rounded-lg text-white/90 hover:text-white hover:bg-white/10 transition flex items-center justify-center">
+                                    <i class="ph ph-frame-corners text-xl"></i>
+                                </button>
+
+                                <i class="ph ph-video-camera text-slate-700 text-6xl absolute z-0"></i>
+
+                                <!-- MJPEG 流 + 快照轮询：有配额的给流，超出的用轮询快照降级渲染，规避浏览器 6 连接上限 -->
+                                <img :data-cam-id="cam.id"
+                                    :src="(currentTab === 'live' && !showPreviewModal) ? (visibleCams.has(cam.id) ? `/api/stream?cam_id=${cam.id}&_k=${camStreamKey[cam.id] || 0}` : (camWaitQueue.has(cam.id) ? `/api/snapshot?cam_id=${cam.id}&t=${timestamp}&_k=${camStreamKey[cam.id] || 0}` : '')) : ''"
+                                    x-effect="currentTab === 'live' ? observeCam(cam.id, $el) : unobserveCam(cam.id, $el)"
+                                    class="absolute inset-0 w-full h-full object-cover z-10 group-hover:scale-105 transition-transform duration-500"
+                                    @error="_onStreamError($event, cam.id)" @load="_onStreamLoad(cam.id)"
+                                    :style="camStatus[cam.id] === false ? 'opacity:0' : 'opacity:1'"
+                                    style="transition: opacity 0.3s;" />
+
+                                <!-- 离线占位符 -->
+                                <div x-show="camStatus[cam.id] === false"
+                                    class="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2">
+                                    <i class="ph ph-wifi-slash text-slate-600 text-4xl"></i>
+                                    <span class="text-slate-500 text-xs">{当前通道无信号}</span>
+                                </div>
+                            </div>
+
+                        </div>
+                </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- ====== TAB 3: 告警画廊 Alarm Center ====== -->
+        <div x-show="currentTab === 'alarms'" x-transition.opacity.duration.300ms style="display: none;">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                <div class="flex gap-2 flex-wrap items-center">
+                    <!-- 类别下拉筛选: 单选. header 显示当前选中, 面板里点一项后关闭.
+                             alarmCategoryOptions = modelClasses ∪ presetClassOptions ∪ customClassOptions ∪ 通道已引用的 key,
+                             这样在 Tasks 多选框里新加的自定义类别会同步出现在这里. -->
+                    <div class="relative" @click.outside="alarmCategoryDropdownOpen = false" x-ref="alarmCatWrap">
+                        <button @click.stop="toggleAlarmCategoryDropdown()"
+                            :class="alarmFilter === 'all'
+                                        ? 'bg-rkblue text-slate-900 font-bold'
+                                        : (alarmCategoryOptions.find(o => o.key === alarmFilter)?.bg || 'bg-slate-800') + ' text-slate-900 font-bold'"
+                            class="px-4 py-1.5 rounded-full text-xs font-semibold transition flex items-center gap-1.5 min-w-[120px]">
+                            <i class="ph ph-stack text-sm"></i>
+                            <span x-text="alarmCurrentLabel"></span>
+                            <i class="ph ph-caret-down text-[10px] ml-auto transition-transform"
+                                :class="alarmCategoryDropdownOpen ? 'rotate-180' : ''"></i>
+                        </button>
+                        <div x-show="alarmCategoryDropdownOpen" x-transition:enter="transition ease-out duration-150"
+                            x-transition:enter-start="opacity-0 -translate-y-1"
+                            x-transition:enter-end="opacity-100 translate-y-0"
+                            x-transition:leave="transition ease-in duration-100" x-transition:leave-start="opacity-100"
+                            x-transition:leave-end="opacity-0" style="display: none;"
+                            class="absolute z-30 left-0 mt-2 w-56 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden flex flex-col"
+                            :class="alarmCatUp ? 'bottom-full mb-2' : 'top-full mt-2'"
+                            :style="'max-height: ' + alarmCatPanelMaxH + 'px;'">
+                            <!-- 全部 (复位) -->
+                            <button @click="alarmFilter = 'all'; alarmCategoryDropdownOpen = false"
+                                :class="alarmFilter === 'all' ? 'bg-slate-800 text-rkblue font-bold' : 'text-slate-300 hover:bg-slate-800'"
+                                class="w-full text-left px-4 py-2 text-xs transition flex justify-between items-center">
+                                <span class="flex items-center gap-2"><i class="ph ph-stack"></i> 全部告警</span>
+                                <span class="text-slate-500" x-text="alarmsAfterDateCamera.length + ' 条'"></span>
+                            </button>
+                            <div class="border-t border-slate-800 overflow-y-auto flex-1 min-h-0">
+                                <template x-for="t in alarmCategoryOptions" :key="t.key">
+                                    <button @click="alarmFilter = t.key; alarmCategoryDropdownOpen = false"
+                                        :class="alarmFilter === t.key ? 'bg-slate-800 text-rkblue font-bold' : 'text-slate-300 hover:bg-slate-800'"
+                                        class="w-full text-left px-4 py-2 text-xs transition flex justify-between items-center gap-2">
+                                        <span class="flex items-center gap-2 min-w-0">
+                                            <!-- 小色块 (复用 _classStyle 的色, 未命中用 slate) -->
+                                            <span class="inline-block w-2 h-2 rounded-full shrink-0"
+                                                :class="t.bg.replace(' text-white', '').replace(' font-bold', '')"></span>
+                                            <span class="truncate" x-text="t.label"></span>
+                                        </span>
+                                        <span class="flex items-center gap-1 shrink-0">
+                                            <span x-show="t.source === 'custom'"
+                                                class="text-[9px] text-violet-400 px-1 py-0.5 rounded bg-violet-500/10 border border-violet-500/30">自定义</span>
+                                            <span x-show="t.source === 'preset'"
+                                                class="text-[9px] text-slate-400 px-1 py-0.5 rounded bg-slate-800 border border-slate-700">默认</span>
+                                            <span class="text-slate-500"
+                                                x-text="alarmsAfterDateCamera.filter(a => getCategoryBadges(a).some(b => b.key === t.key)).length + ' 条'"></span>
+                                        </span>
+                                    </button>
+                                </template>
+                                <div x-show="alarmCategoryOptions.length === 0"
+                                    class="px-4 py-3 text-center text-xs text-slate-500">
+                                    暂无可用类别
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 日期下拉筛选 (按告警日期查看) -->
+                    <div class="relative" @click.outside="showDatePicker = false">
+                        <button @click="showDatePicker = !showDatePicker" :class="alarmDateFilter !== 'all'
+                                        ? 'bg-rkblue text-slate-900 font-bold'
+                                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+                            class="px-4 py-1.5 rounded-full text-xs font-semibold transition flex items-center gap-1.5">
+                            <i class="ph ph-calendar-blank text-sm"></i>
+                            <span x-text="alarmDateFilter === 'all'
+                                    ? '全部日期'
+                                    : alarmDateFilter.replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')"></span>
+                            <i class="ph ph-caret-down text-[10px]"></i>
+                        </button>
+                        <div x-show="showDatePicker" x-transition:enter="transition ease-out duration-150"
+                            x-transition:enter-start="opacity-0 -translate-y-1"
+                            x-transition:enter-end="opacity-100 translate-y-0"
+                            x-transition:leave="transition ease-in duration-100" x-transition:leave-start="opacity-100"
+                            x-transition:leave-end="opacity-0" style="display: none;"
+                            class="absolute z-30 left-0 mt-2 w-56 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+                            <button @click="alarmDateFilter = 'all'; showDatePicker = false"
+                                :class="alarmDateFilter === 'all' ? 'bg-slate-800 text-rkblue font-bold' : 'text-slate-300 hover:bg-slate-800'"
+                                class="w-full text-left px-4 py-2 text-xs transition flex justify-between items-center">
+                                <span>全部日期</span>
+                                <span class="text-slate-500" x-text="alarmsAfterCategory.length + ' 条'"></span>
+                            </button>
+                            <div class="border-t border-slate-800 max-h-64 overflow-y-auto custom-scrollbar">
+                                <template x-for="d in availableDates" :key="d.key">
+                                    <button @click="alarmDateFilter = d.key; showDatePicker = false"
+                                        :class="alarmDateFilter === d.key ? 'bg-slate-800 text-rkblue font-bold' : 'text-slate-300 hover:bg-slate-800'"
+                                        class="w-full text-left px-4 py-2 text-xs transition flex justify-between items-center">
+                                        <span x-text="d.label"></span>
+                                        <span class="text-slate-500" x-text="d.count + ' 条'"></span>
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 通道下拉筛选 (按视频通道查看) -->
+                    <div class="relative" @click.outside="showCameraPicker = false">
+                        <button @click.stop="showCameraPicker = !showCameraPicker" :class="alarmCameraFilter !== 'all'
+                                        ? 'bg-rkblue text-slate-900 font-bold'
+                                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+                            class="px-4 py-1.5 rounded-full text-xs font-semibold transition flex items-center gap-1.5">
+                            <i class="ph ph-video-camera text-sm"></i>
+                            <span x-text="alarmCameraFilter === 'all'
+                                    ? '全部通道'
+                                    : alarmCameraFilter"></span>
+                            <i class="ph ph-caret-down text-[10px]"></i>
+                        </button>
+                        <div x-show="showCameraPicker" x-transition:enter="transition ease-out duration-150"
+                            x-transition:enter-start="opacity-0 -translate-y-1"
+                            x-transition:enter-end="opacity-100 translate-y-0"
+                            x-transition:leave="transition ease-in duration-100" x-transition:leave-start="opacity-100"
+                            x-transition:leave-end="opacity-0" style="display: none;"
+                            class="absolute z-30 left-0 mt-2 w-56 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+                            <button @click="alarmCameraFilter = 'all'; showCameraPicker = false"
+                                :class="alarmCameraFilter === 'all' ? 'bg-slate-800 text-rkblue font-bold' : 'text-slate-300 hover:bg-slate-800'"
+                                class="w-full text-left px-4 py-2 text-xs transition flex justify-between items-center">
+                                <span>全部通道</span>
+                                <span class="text-slate-500" x-text="alarmsAfterDate.length + ' 条'"></span>
+                            </button>
+                            <div class="border-t border-slate-800 max-h-64 overflow-y-auto custom-scrollbar">
+                                <template x-for="c in availableCameras" :key="c.key">
+                                    <button @click="alarmCameraFilter = c.key; showCameraPicker = false"
+                                        :class="alarmCameraFilter === c.key ? 'bg-slate-800 text-rkblue font-bold' : 'text-slate-300 hover:bg-slate-800'"
+                                        class="w-full text-left px-4 py-2 text-xs transition flex justify-between items-center gap-2">
+                                        <span class="truncate" x-text="c.label"></span>
+                                        <span class="text-slate-500 shrink-0" x-text="c.count + ' 条'"></span>
+                                    </button>
+                                </template>
+                                <div x-show="availableCameras.length === 0"
+                                    class="px-4 py-3 text-center text-xs text-slate-500">
+                                    暂无通道数据
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3 flex-wrap">
+                    <span class="text-slate-400 text-xs font-medium bg-slate-800/50 px-3 py-1.5 rounded-full">共
+                        <span class="text-rkblue font-bold text-sm" x-text="filteredAlarms.length">0</span> 条</span>
+
+                    <!-- 普通模式: 批量管理入口 -->
+                    <button x-show="!alarmSelectMode" @click="toggleAlarmSelectMode"
+                        class="text-slate-400 hover:text-rkblue flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-full hover:bg-slate-800 transition"><i
+                            class="ph ph-check-square"></i> 批量管理</button>
+
+                    <!-- 选择模式: 全选 / 已选计数 / 删除所选 / 退出 -->
+                    <template x-if="alarmSelectMode">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <button @click="toggleSelectAllFiltered"
+                                class="text-slate-300 hover:text-rkblue flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 transition">
+                                <i class="ph" :class="allFilteredSelected ? 'ph-minus-square' : 'ph-check-square'"></i>
+                                <span x-text="allFilteredSelected ? '取消全选' : '全选当前'"></span>
+                            </button>
+                            <span
+                                class="text-xs font-semibold px-3 py-1.5 rounded-full bg-rkblue/15 text-rkblue border border-rkblue/30">已选
+                                <span class="font-bold text-sm" x-text="selectedAlarmCount">0</span> 张</span>
+                            <button @click="deleteSelectedAlarms" :disabled="selectedAlarmCount === 0"
+                                :class="selectedAlarmCount === 0 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-red-500 hover:text-white'"
+                                class="text-red-400 flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-full bg-slate-800 transition"><i
+                                    class="ph ph-trash"></i> 删除所选</button>
+                            <button @click="toggleAlarmSelectMode"
+                                class="text-slate-400 hover:text-white flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-full hover:bg-slate-800 transition">退出</button>
+                        </div>
+                    </template>
+
+                    <!-- 选择模式下隐藏"清空全部", 避免两个高危按钮同屏误点 -->
+                    <button x-show="!alarmSelectMode" @click="clearAlarms"
+                        class="text-slate-400 hover:text-red-400 flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-full hover:bg-slate-800 transition"><i
+                            class="ph ph-trash"></i> 清空告警</button>
+                </div>
+            </div>
+
+            <!-- 瀑布流告警图 -->
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <template x-for="(alarm, i) in filteredAlarms" :key="i">
+                    <div @click="onAlarmCardClick(alarm)"
+                        class="glass-panel rounded-xl overflow-hidden relative group cursor-pointer border transition-all hover:scale-[1.02] shadow-lg"
+                        :class="alarmSelectMode && isAlarmSelected(alarm) ? 'border-rkblue ring-2 ring-rkblue/50' : 'border-slate-700/50 hover:border-rkblue/50'">
+                        <div class="aspect-[4/3] bg-slate-900 relative overflow-hidden">
+                            <!-- 加载真实的图片 URL -->
+                            <img :src="alarm.image"
+                                class="w-full h-full object-cover opacity-90 group-hover:scale-105 transition-transform duration-500" />
+
+                            <!-- 悬浮居中【点击放大】按钮 (选择模式下隐藏, 避免遮挡勾选) -->
+                            <div x-show="!alarmSelectMode"
+                                class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10">
+                                <span
+                                    class="bg-rkblue text-slate-900 text-xs font-bold px-3.5 py-1.5 rounded-full flex items-center gap-1.5 shadow-[0_0_15px_rgba(0,210,255,0.6)]">
+                                    <i class="ph ph-magnifying-glass-plus text-sm"></i> 点击放大查看
+                                </span>
+                            </div>
+
+                            <!-- 顶角类别 Label Badge：单帧多类别时堆叠展示多个 badge -->
+                            <div class="absolute top-2 left-2 z-20 flex flex-col gap-1 items-start max-w-[80%]">
+                                <template x-for="badge in getCategoryBadges(alarm)" :key="badge.name + alarm.image">
+                                    <span
+                                        class="px-2 py-0.5 text-[10px] font-bold rounded shadow-md backdrop-blur-sm whitespace-nowrap"
+                                        :class="badge.bg" x-text="badge.name">
+                                    </span>
+                                </template>
+                            </div>
+
+                            <!-- 批量选择复选框: 仅选择模式显示, 常显不依赖 hover -->
+                            <div x-show="alarmSelectMode"
+                                class="absolute top-2 right-2 z-30 w-6 h-6 rounded-md flex items-center justify-center border-2 transition-colors shadow-md"
+                                :class="isAlarmSelected(alarm) ? 'bg-rkblue border-rkblue text-slate-900' : 'bg-slate-900/70 border-slate-400 text-transparent'">
+                                <i class="ph ph-check text-sm font-bold"></i>
+                            </div>
+
+                            <!-- 单独删除按钮 (选择模式下让位给复选框) -->
+                            <button x-show="!alarmSelectMode" @click.stop="deleteSingleAlarm(alarm.image)"
+                                class="absolute top-2 right-2 z-20 bg-slate-900/80 hover:bg-red-500 text-slate-300 hover:text-white p-1.5 rounded-lg transition-colors backdrop-blur-sm shadow-md opacity-0 group-hover:opacity-100">
+                                <i class="ph ph-trash text-sm"></i>
+                            </button>
+                        </div>
+                        <!-- 底部固定信息 Bar -->
+                        <div
+                            class="p-2.5 bg-slate-900/90 border-t border-slate-800 flex justify-between items-center text-xs">
+                            <div class="text-slate-300 font-semibold truncate text-xs" x-text="'通道: ' + alarm.camera">
+                            </div>
+                            <div class="text-[10px] text-slate-400 font-mono"
+                                x-text="alarm.time.split('_').pop().replace('.jpg','') || alarm.time"></div>
+                        </div>
+                    </div>
+                </template>
+                <template x-if="filteredAlarms.length === 0">
+                    <div class="col-span-full py-20 flex flex-col items-center justify-center text-slate-500">
+                        <i class="ph ph-image-square text-4xl mb-3 opacity-50"></i>
+                        <p class="text-sm">暂无该类别的地质灾害告警记录</p>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- ====== TAB 4: 系统设置 Settings ====== -->
+        <div x-show="currentTab === 'settings'" x-transition.opacity.duration.300ms style="display: none;"
+            class="space-y-6">
+            <!-- MQTT Config (支持 服务器 1 / 2 / 3 标签页动态点击切换) -->
+            <div class="glass-panel p-6 rounded-2xl">
+                <div class="flex items-center justify-between mb-5">
+                    <h3 class="text-lg font-semibold text-slate-200 flex items-center gap-2">
+                        <i class="ph ph-cloud-arrow-up text-rkblue"></i> MQTT设置
+                    </h3>
+                    <div class="flex items-center bg-slate-800/80 p-1 rounded-xl border border-slate-700/50 text-xs">
+                        <button @click="serverTab = 0"
+                            :class="serverTab === 0 ? 'bg-rkblue text-slate-900 font-bold' : 'text-slate-400 hover:text-slate-200'"
+                            class="px-3 py-1.5 rounded-lg transition">服务器 1</button>
+                        <button @click="serverTab = 1"
+                            :class="serverTab === 1 ? 'bg-rkblue text-slate-900 font-bold' : 'text-slate-400 hover:text-slate-200'"
+                            class="px-3 py-1.5 rounded-lg transition">服务器 2</button>
+                        <button @click="serverTab = 2"
+                            :class="serverTab === 2 ? 'bg-rkblue text-slate-900 font-bold' : 'text-slate-400 hover:text-slate-200'"
+                            class="px-3 py-1.5 rounded-lg transition">服务器 3</button>
+                    </div>
+                </div>
+
+                <div class="space-y-4" x-show="config.mqtt_servers && config.mqtt_servers[serverTab]">
+                    <!-- 第一行：启用状态 与 数据上报主题 -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1.5">启用状态</label>
+                            <select x-model="config.mqtt_servers[serverTab].enabled"
+                                class="w-full bg-slate-900/60 border border-slate-700/80 rounded-xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-rkblue transition">
+                                <option value="true">启用</option>
+                                <option value="false">禁用</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1.5">数据上报主题 (默认 $data)</label>
+                            <input type="text" x-model="config.mqtt_servers[serverTab].topic" placeholder="$data"
+                                class="w-full bg-slate-900/60 border border-slate-700/80 rounded-xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-rkblue font-mono transition">
+                        </div>
+                    </div>
+
+                    <!-- 第二行：服务器地址 与 端口 -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1.5">服务器地址</label>
+                            <input type="text" x-model="config.mqtt_servers[serverTab].server"
+                                placeholder="139.196.123.7"
+                                class="w-full bg-slate-900/60 border border-slate-700/80 rounded-xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-rkblue font-mono transition">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1.5">端口</label>
+                            <input type="number" x-model.number="config.mqtt_servers[serverTab].port" placeholder="8492"
+                                class="w-full bg-slate-900/60 border border-slate-700/80 rounded-xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-rkblue font-mono transition">
+                        </div>
+                    </div>
+
+                    <!-- 第三行：使用域名复选框 -->
+                    <div class="flex items-center gap-2 pt-1">
+                        <input type="checkbox" :id="'useDomain_' + serverTab"
+                            x-model="config.mqtt_servers[serverTab].use_domain"
+                            class="w-4 h-4 rounded bg-slate-800 border-slate-700 text-rkblue focus:ring-rkblue">
+                        <label :for="'useDomain_' + serverTab" class="text-xs text-slate-400 cursor-pointer">使用域名
+                            (勾选后设备端不检测 IP 合法性)</label>
+                    </div>
+
+                    <!-- 第四行：用户名 与 密码 -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-1">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1.5">用户名</label>
+                            <input type="text" x-model="config.mqtt_servers[serverTab].username" placeholder="可选"
+                                class="w-full bg-slate-900/60 border border-slate-700/80 rounded-xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-rkblue transition">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1.5">密码</label>
+                            <div class="relative">
+                                <input :type="showPassword ? 'text' : 'password'"
+                                    x-model="config.mqtt_servers[serverTab].password" placeholder="可选"
+                                    class="w-full bg-slate-900/60 border border-slate-700/80 rounded-xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-rkblue transition pr-10">
+                                <button @click="showPassword = !showPassword" type="button"
+                                    class="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200">
+                                    <i class="ph" :class="showPassword ? 'ph-eye-slash' : 'ph-eye'"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 第五行：Client ID -->
+                    <div class="pt-1">
+                        <label class="block text-xs font-medium text-slate-400 mb-1.5">Client ID (可选)</label>
+                        <input type="text" x-model="config.mqtt_servers[serverTab].client_id" placeholder="box_001"
+                            class="w-full bg-slate-900/60 border border-slate-700/80 rounded-xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-rkblue font-mono transition">
+                    </div>
+                </div>
+
+                <div class="mt-6 flex justify-end gap-3">
+                    <button @click="testMqtt()"
+                        class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-5 py-2.5 rounded-xl text-sm font-semibold transition">
+                        <i class="ph ph-paper-plane-right mr-1.5"></i>测试 MQTT 推送
+                    </button>
+                    <button @click="saveMqttConfig()"
+                        class="bg-gradient-to-r from-rkblue to-blue-500 text-slate-900 px-6 py-2.5 rounded-xl text-sm font-bold shadow-[0_0_20px_rgba(0,210,255,0.3)] hover:shadow-[0_0_30px_rgba(0,210,255,0.6)] transition-all"
+                        x-text="'保存服务器 ' + (serverTab + 1) + ' 设置'"></button>
+                </div>
+            </div>
+
+            <!-- 摄像头表格 -->
+            <div class="glass-panel p-6 rounded-2xl">
+                <div class="flex justify-between items-center mb-5">
+                    <h3 class="text-lg font-semibold text-slate-200 flex items-center gap-2"><i
+                            class="ph ph-video-camera text-rkblue"></i> 边缘拉流通道源</h3>
+                    <button @click="addCamera()"
+                        class="text-xs font-semibold text-rkblue border border-rkblue/50 px-3 py-1.5 rounded-md hover:bg-rkblue hover:text-slate-900 transition-colors">+
+                        添加视频源</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="text-slate-400 border-b border-slate-700/50">
+                            <tr>
+                                <th class="pb-3 font-medium">Camera ID</th>
+                                <th class="pb-3 font-medium">RTSP URL</th>
+                                <th class="pb-3 font-medium">Tasks</th>
+                                <th class="pb-3 font-medium">Model</th>
+                                <th class="pb-3 font-medium text-right">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800/50">
+                            <template x-for="(cam, index) in config.cameras" :key="index">
+                                <tr class="hover:bg-slate-800/30">
+                                    <td class="py-3">
+                                        <div class="text-slate-300 font-semibold" x-text="cam.id"></div>
+                                        <div class="text-slate-500 text-xs mt-0.5" x-text="cam.name || '未命名'"></div>
+                                    </td>
+                                    <td class="py-3 text-slate-500 font-mono text-xs max-w-[200px] truncate"
+                                        x-text="cam.url" :title="cam.url"></td>
+                                    <td class="py-3">
+                                        <div class="flex flex-wrap gap-1" x-show="cam.tasks && cam.tasks.length > 0">
+                                            <template x-for="t in cam.tasks" :key="t">
+                                                <!-- 走 labelForKey() 把英文 key 翻成中文: 命中等显示中文, 未命中 (历史遗留 key)
+                                                         回退到 key 本身, 避免渲染空白 -->
+                                                <span
+                                                    class="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700/60"
+                                                    x-text="labelForKey(t)"
+                                                    :title="t !== labelForKey(t) ? ('key: ' + t) : ''"></span>
+                                            </template>
+                                        </div>
+                                        <span x-show="!cam.tasks || cam.tasks.length === 0"
+                                            class="text-xs text-slate-500">未配置</span>
+                                    </td>
+                                    <td class="py-3"><span
+                                            class="text-xs text-rkblue bg-rkblue/10 px-2 py-1 rounded border border-rkblue/20"
+                                            x-text="cam.model || '未绑定'"></span></td>
+                                    <td class="py-3 text-right">
+                                        <button @click="editCamera(index)"
+                                            class="text-slate-400 hover:text-rkblue transition-colors px-2"><i
+                                                class="ph ph-pencil-simple"></i></button>
+                                        <button @click="deleteCamera(index)"
+                                            class="text-slate-400 hover:text-red-400 transition-colors px-2"><i
+                                                class="ph ph-trash"></i></button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- AI 模型管理 -->
+            <div class="glass-panel p-6 rounded-2xl mt-6">
+                <div class="flex justify-between items-center mb-5">
+                    <h3 class="text-lg font-semibold text-slate-200 flex items-center gap-2">
+                        <i class="ph ph-brain text-rkblue"></i> AI 算力模型池
+                    </h3>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- 模型列表 -->
+                    <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">
+                        <h4 class="text-sm font-semibold text-slate-300 mb-3 flex justify-between items-center">
+                            已挂载的模型
+                            <button @click="fetchModels()" class="text-slate-400 hover:text-rkblue"><i
+                                    class="ph ph-arrows-clockwise"></i></button>
+                        </h4>
+                        <div class="space-y-2 max-h-[160px] overflow-y-auto pr-2 custom-scrollbar">
+                            <template x-if="models.length === 0">
+                                <div class="text-xs text-slate-500 py-2">暂无模型文件，请上传</div>
+                            </template>
+                            <template x-for="m in models" :key="m">
+                                <div
+                                    class="flex justify-between items-center bg-slate-800 px-3 py-2 rounded border border-slate-700 hover:border-slate-600 transition">
+                                    <div class="text-sm text-slate-300 font-mono flex items-center gap-2">
+                                        <i class="ph ph-file-code text-rkblue"></i>
+                                        <span x-text="m"></span>
+                                    </div>
+                                    <button @click="deleteModel(m)" class="text-slate-400 hover:text-red-400"><i
+                                            class="ph ph-trash"></i></button>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- 模型上传 -->
+                    <div class="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4 flex flex-col justify-center">
+                        <p class="text-xs text-slate-500 mb-2">上传 <span class="text-slate-300">.zip 压缩包</span>（内含 .rknn 模型 +
+                            配套的类别 json 文件）或单独一个 .rknn。类别 json 需与模型同名，文件较大，请耐心等待。</p>
+
+                        <!-- 类别文件模板下载: sidecar 由用户自己维护, 给个能直接照抄的样例.
+                             模板放在 web/ 下, 由 set_mount_point("/", ../web) 直接以静态文件提供. -->
+                        <div class="text-xs text-slate-500 mb-4 flex flex-col gap-1">
+                            <a href="/sidecar_template.json" download="sidecar_template.json" target="_blank"
+                                class="text-rkblue hover:underline inline-flex items-center gap-1.5 w-fit font-semibold">
+                                <i class="ph ph-download-simple text-sm"></i> 下载类别文件模板
+                            </a>
+                            <span class="text-[10px] text-slate-600">下载后按模型类别改，改完<b class="text-slate-400">重命名成与 .rknn 同名</b>（如
+                                <span class="font-mono">yolo8_int8.json</span>）。<span class="font-mono">key</span> = 训练时的类别名（写进
+                                tasks），<span class="font-mono">label</span> = 界面显示名，<span
+                                    class="text-amber-500/90">顺序必须与训练时一致</span>（第 1 项即 class_id 0）。</span>
+                        </div>
+
+                        <div class="w-full flex flex-col items-end gap-3">
+                            <div class="flex items-center gap-3">
+                                <label
+                                    class="cursor-pointer bg-slate-800 border border-slate-700 hover:border-rkblue/50 text-slate-300 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                                    <i class="ph ph-upload-simple mr-2"></i>选择文件
+                                    <input type="file" class="hidden" accept=".rknn,.zip" @change="handleFileSelect">
+                                </label>
+                                <button @click="uploadModel" :disabled="!selectedFile || isUploading"
+                                    class="bg-rkblue text-slate-900 px-6 py-2 rounded-lg text-sm font-bold shadow-[0_0_15px_rgba(0,210,255,0.3)] hover:shadow-[0_0_25px_rgba(0,210,255,0.6)] transition-shadow disabled:opacity-50 disabled:cursor-not-allowed">
+                                    <span x-show="!isUploading">上传新模型</span>
+                                    <span x-show="isUploading" class="flex items-center gap-2">
+                                        <i class="ph ph-spinner animate-spin"></i> 上传中...
+                                    </span>
+                                </button>
+                            </div>
+                            <!-- 进度条 -->
+                            <div x-show="isUploading || uploadProgress > 0"
+                                class="w-full bg-slate-800 rounded-full h-1.5 mt-2 overflow-hidden">
+                                <div class="bg-rkblue h-1.5 rounded-full transition-all duration-300"
+                                    :style="`width: ${uploadProgress}%`"></div>
+                            </div>
+                            <div x-show="selectedFile && !isUploading" class="text-xs text-slate-400">
+                                已选择: <span class="text-slate-300" x-text="selectedFile.name"></span>
+                                (<span x-text="(selectedFile.size / 1024 / 1024).toFixed(2)"></span> MB)
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        </div>
+    </main>
+
+    <!-- Toast Notification (z-[99999] 置于页面最高绝密层级) -->
+    <div x-show="toast.show" x-transition.opacity
+        class="fixed top-6 right-6 z-[99999] bg-slate-900/95 backdrop-blur-md border text-white px-5 py-3.5 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8)] flex items-center gap-3"
+        :class="{
+             'border-green-500/50': toast.type === 'success',
+             'border-amber-500/50': toast.type === 'warning',
+             'border-red-500/50': toast.type === 'error',
+             'border-blue-500/50': toast.type === 'info'
+         }">
+        <i class="text-xl" :class="{
+               'ph ph-check-circle text-green-400': toast.type === 'success',
+               'ph ph-warning text-amber-400': toast.type === 'warning',
+               'ph ph-warning-circle text-red-400': toast.type === 'error',
+               'ph ph-info text-blue-400': toast.type === 'info',
+               'ph ph-check-circle text-green-400': !toast.type
+           }"></i>
+        <div class="text-sm font-medium" x-text="toast.message"></div>
+    </div>
+
+    <!-- Modal for Notification Details -->
+    <div x-show="showNotifModal" style="display: none;"
+        class="fixed inset-0 z-[99999] flex items-center justify-center bg-black/70 backdrop-blur-md"
+        @click.self="showNotifModal = false">
+        <div class="bg-slate-900 border border-slate-700/50 rounded-2xl w-full max-w-md p-6 shadow-2xl"
+            x-transition.scale>
+            <div class="flex items-center gap-3 mb-4">
+                <i x-show="activeNotif.type==='info'" class="ph ph-info text-blue-400 text-3xl"></i>
+                <i x-show="activeNotif.type==='warning'" class="ph ph-warning text-amber-400 text-3xl"></i>
+                <i x-show="activeNotif.type==='error'" class="ph ph-warning-circle text-red-400 text-3xl"></i>
+                <h3 class="text-lg font-bold text-slate-200" x-text="activeNotif.title"></h3>
+            </div>
+            <div class="bg-slate-800/50 p-4 rounded-xl mb-4 border border-slate-700/50">
+                <p class="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap" x-text="activeNotif.details"></p>
+            </div>
+            <div class="flex justify-between items-center text-xs text-slate-500 mb-6 font-mono">
+                <span x-text="activeNotif.time"></span>
+            </div>
+            <div class="flex justify-end">
+                <button @click="showNotifModal = false"
+                    class="px-5 py-2 text-sm font-bold bg-rkblue text-slate-900 rounded-lg shadow-[0_0_15px_rgba(0,210,255,0.3)] hover:shadow-[0_0_25px_rgba(0,210,255,0.5)] transition">我知道了</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Add/Edit Camera (z-[99999]) -->
+    <div x-show="showCameraModal" style="display: none;"
+        class="fixed inset-0 z-[99999] flex items-center justify-center bg-black/70 backdrop-blur-md"
+        @keydown.escape.window="showCameraModal = false"
+        @keydown.escape.prevent="$event.target && $event.target.blur && $event.target.blur()">
+        <!-- 点击背景不关闭: 防止编辑 Tasks 下拉框时不小心点到背景弹出去.
+             关闭手段 = 点 X / 点取消 / 按 ESC. -->
+        <div class="bg-slate-900 border border-slate-700/50 rounded-2xl w-full max-w-md p-6 shadow-2xl relative"
+            x-transition.scale>
+            <!-- 右上角 X 关闭按钮 -->
+            <button @click="showCameraModal = false"
+                class="absolute top-3 right-3 w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                title="关闭 (ESC)">
+                <i class="ph ph-x text-lg"></i>
+            </button>
+            <h3 class="text-lg font-bold text-slate-200 mb-4 pr-8" x-text="editingIndex === -1 ? '添加视频源' : '修改视频源'">
+            </h3>
+
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Camera ID (如: D1)</label>
+                        <input type="text" x-model="tempCamera.id"
+                            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:border-rkblue outline-none transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">名称 (如: 北走廊)</label>
+                        <input type="text" x-model="tempCamera.name"
+                            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:border-rkblue outline-none transition">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">RTSP URL</label>
+                    <input type="text" x-model="tempCamera.url"
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:border-rkblue outline-none transition">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">关联 AI 模型</label>
+                    <select x-model="tempCamera.model" @change="onModelChange(true)"
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:border-rkblue outline-none transition">
+                        <option value="">--无--</option>
+                        <template x-for="m in models" :key="m">
+                            <option :value="m" x-text="m"></option>
+                        </template>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Tasks (告警类别)</label>
+
+                    <!-- 类别来源提示: 把"当前能勾哪些类别、它们从哪来"显式化.
+                         否则用户会以为是随便勾的, 实际可选范围是模型 sidecar 决定的. -->
+                    <div class="mb-1.5 text-[10px] flex items-center gap-1.5" x-show="modelClassesLoading">
+                        <i class="ph ph-spinner animate-spin text-rkblue"></i>
+                        <span class="text-slate-400">正在读取模型类别...</span>
+                    </div>
+                    <div class="mb-1.5 text-[10px] flex items-center gap-1.5"
+                        x-show="!modelClassesLoading && modelClassSource === 'sidecar'">
+                        <i class="ph ph-check-circle text-emerald-400"></i>
+                        <span class="text-emerald-400">已读取模型类别文件，下列为该模型可检测的目标</span>
+                    </div>
+                    <div class="mb-1.5 text-[10px] flex items-center gap-1.5"
+                        x-show="!modelClassesLoading && tempCamera.model && modelClassSource === 'none'">
+                        <i class="ph ph-warning text-amber-400"></i>
+                        <span class="text-amber-400">该模型未配置类别文件，使用默认类别</span>
+                    </div>
+                    <div class="mb-1.5 text-[10px] flex items-center gap-1.5"
+                        x-show="!modelClassesLoading && !tempCamera.model">
+                        <i class="ph ph-info text-slate-500"></i>
+                        <span class="text-slate-500">未绑定模型，使用默认类别</span>
+                    </div>
+
+                    <!-- 自定义多选下拉框: 点击头部展开, 内部每项一个 checkbox, 底部粘性输入框添加自定义 key -->
+                    <div class="relative" x-ref="tasksWrap" @click.outside="tasksDropdownOpen = false">
+                        <!-- 头部按钮: 显示已选项摘要 + 折叠箭头 -->
+                        <button type="button" @click.stop="toggleTasksDropdown()"
+                            :class="tasksDropdownOpen ? 'border-rkblue' : 'border-slate-700 hover:border-slate-600'"
+                            class="w-full bg-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 flex items-center gap-2 border transition">
+                            <i class="ph ph-stack text-slate-400"></i>
+                            <span class="flex-1 text-left truncate"
+                                :class="(tempCamera.tasks || []).length === 0 ? 'text-slate-500' : ''"
+                                x-text="tasksDisplayText()"></span>
+                            <i class="ph ph-caret-down text-slate-400 transition-transform"
+                                :class="tasksDropdownOpen ? 'rotate-180' : ''"></i>
+                        </button>
+
+                        <!-- 已选 chip 行: 头部下方展示, 方便一眼看到当前选了哪些, 点 x 直接移除.
+                             限定 max-height + 内部滚动, 避免选了 N 多项时把下方的"关联 AI 模型"等挤没. -->
+                        <div x-show="(tempCamera.tasks || []).length > 0"
+                            class="mt-1.5 flex flex-wrap gap-1 overflow-y-auto border border-slate-800/60 rounded p-1 bg-slate-900/40"
+                            style="max-height: 3rem;">
+                            <template x-for="k in tempCamera.tasks" :key="k">
+                                <span
+                                    class="text-[10px] pl-2 pr-1 py-0.5 rounded-full bg-violet-500/15 border border-violet-500/40 text-violet-300 flex items-center gap-1">
+                                    <span x-text="labelForKey(k) || k"></span>
+                                    <button type="button" @click.stop="toggleTaskKey(k)"
+                                        class="ml-0.5 w-4 h-4 rounded-full hover:bg-violet-500/30 flex items-center justify-center"
+                                        title="移除">
+                                        <i class="ph ph-x text-[10px]"></i>
+                                    </button>
+                                </span>
+                            </template>
+                        </div>
+
+                        <!-- 下拉面板 -->
+                        <div x-show="tasksDropdownOpen" x-transition:enter="transition ease-out duration-100"
+                            x-transition:enter-start="opacity-0 -translate-y-1"
+                            x-transition:enter-end="opacity-100 translate-y-0"
+                            x-transition:leave="transition ease-in duration-75" x-transition:leave-start="opacity-100"
+                            x-transition:leave-end="opacity-0"
+                            class="absolute z-20 w-full bg-slate-900 border border-slate-700 rounded-lg shadow-2xl flex flex-col"
+                            :class="tasksDropdownUp ? 'bottom-full mb-1' : 'top-full mt-1'"
+                            :style="'max-height: ' + tasksPanelMaxH + 'px;'">
+                            <!-- 可选项滚动区 (min-h-0: 允许 flex 收缩, 面板高度受限时本区滚动) -->
+                            <div class="overflow-y-auto flex-1 min-h-0 py-1">
+                                <template x-for="cls in availableClassOptions()" :key="cls.key">
+                                    <label
+                                        class="flex items-center gap-2 px-3 py-2 hover:bg-slate-800/70 cursor-pointer text-sm border-b border-slate-800/60 last:border-b-0 transition">
+                                        <input type="checkbox" :checked="(tempCamera.tasks || []).includes(cls.key)"
+                                            @change="toggleTaskKey(cls.key)" @click.stop
+                                            class="rounded bg-slate-800 border-slate-600 text-rkblue focus:ring-rkblue focus:ring-offset-0 focus:ring-offset-slate-900">
+                                        <div class="flex-1 min-w-0">
+                                            <div class="text-slate-200 truncate" x-text="cls.label || cls.key"></div>
+                                            <div class="text-[10px] text-slate-500 font-mono truncate" x-text="cls.key">
+                                            </div>
+                                        </div>
+                                        <span x-show="cls.isPreset"
+                                            class="text-[9px] text-slate-400 px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 shrink-0">默认</span>
+                                        <span x-show="cls.isCustom"
+                                            class="text-[9px] text-violet-400/80 px-1.5 py-0.5 rounded bg-violet-500/10 border border-violet-500/30 shrink-0">自定义</span>
+                                        <!-- 删除按钮: 只在自定义类别行出现. 默认半透, hover 才变实, 避免面板太吵.
+                                             注意放在 label 内但 @click.stop 阻止冒泡, 不会触发 checkbox toggle. -->
+                                        <button x-show="cls.isCustom" @click.stop="deleteCustomCategory(cls.key)"
+                                            class="opacity-40 hover:opacity-100 text-slate-400 hover:text-rose-400 transition w-5 h-5 rounded flex items-center justify-center shrink-0"
+                                            title="删除此自定义类别">
+                                            <i class="ph ph-trash text-[13px]"></i>
+                                        </button>
+                                    </label>
+                                </template>
+                                <div x-show="availableClassOptions().length === 0"
+                                    class="px-3 py-6 text-center text-xs text-slate-500">
+                                    暂无可选类别<br>
+                                    <span class="text-[10px] text-slate-600">请在下方输入自定义类别添加</span>
+                                </div>
+                            </div>
+                            <!-- 自定义类别输入行 (粘性底部, shrink-0 保证始终可见).
+                                 模型自带类别文件时隐藏: 此时只能勾模型能检测的类别,
+                                 手打一个模型没有的 key 只会让该通道永远不告警. -->
+                            <div x-show="modelClassSource !== 'sidecar'"
+                                class="border-t border-slate-700 p-2 flex gap-1.5 bg-slate-900/80 shrink-0">
+                                <input type="text" x-model="customTaskInput" @keydown.enter.prevent="addCustomTask()"
+                                    @keydown.escape.stop="tasksDropdownOpen = false" @click.stop
+                                    placeholder="自定义类别 key (如 pothole)"
+                                    class="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-xs text-slate-200 focus:border-rkblue outline-none transition">
+                                <button type="button" @click.stop="addCustomTask()" :disabled="!customTaskInput.trim()"
+                                    class="text-xs px-3 py-1.5 rounded bg-rkblue/20 border border-rkblue/40 text-rkblue hover:bg-rkblue/30 disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center gap-1">
+                                    <i class="ph ph-plus"></i>
+                                    <span>添加</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-3 mt-6">
+                <button @click="showCameraModal = false"
+                    class="px-4 py-2 text-sm font-medium text-slate-400 hover:text-white transition">取消</button>
+                <button @click="saveCamera()"
+                    class="px-4 py-2 text-sm font-bold bg-rkblue text-slate-900 rounded-lg shadow-[0_0_15px_rgba(0,210,255,0.3)] hover:shadow-[0_0_25px_rgba(0,210,255,0.5)] transition">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 全屏/高清放大预览 Modal (z-[99999] 最外层全屏遮罩) -->
+    <div x-show="showPreviewModal" x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+        x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100 scale-100"
+        x-transition:leave-end="opacity-0 scale-95" style="display: none;"
+        class="fixed inset-0 z-[99999] flex items-center justify-center bg-black/95 backdrop-blur-md"
+        :class="previewData.type === 'live' ? 'p-0' : 'p-2 md:p-4'"
+        @click.self="onPreviewBackdropClick()" @keydown.escape.window="closePreviewModal()"
+        @keydown.arrow-right.window="if (previewData.type === 'image' && previewTotal > 1) previewNext()"
+        @keydown.arrow-left.window="if (previewData.type === 'image' && previewTotal > 1) previewPrev()">
+
+        <!-- 实时流: 铺满整个屏幕, 不要外框/圆角/留白; 告警图保持带框的灯箱样式
+             (图片有翻页和下载, 留白更合适). -->
+        <div class="relative overflow-hidden flex flex-col"
+            :class="previewData.type === 'live'
+                ? 'w-screen h-screen max-w-none bg-black'
+                : 'w-[96vw] max-w-6xl h-[92vh] bg-slate-900 border border-slate-700/80 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.9)]'">
+            <!-- 头部 Bar: 实时流全屏时整条隐藏, 画面上不允许有任何遮挡 (ESC 退出) -->
+            <div x-show="previewData.type !== 'live'"
+                class="flex justify-between items-center px-5 py-2.5 border-b border-slate-800 bg-slate-950 shrink-0">
+                <div class="flex items-center gap-3 min-w-0 flex-1">
+                    <!-- 多类别 Badge：循环渲染该帧所有命中类别 -->
+                    <div class="flex items-center gap-1.5 flex-wrap shrink-0">
+                        <template
+                            x-for="badge in (previewData.categories && previewData.categories.length > 0 ? previewData.categories : [previewData])"
+                            :key="badge.name + (badge.image || '')">
+                            <span class="px-2.5 py-1 text-xs font-bold rounded whitespace-nowrap"
+                                :class="badge.bg || (badge.bg = previewData.bg)"
+                                x-text="badge.name || badge.category"></span>
+                        </template>
+                    </div>
+                    <h3 class="text-base font-bold text-slate-100 truncate" x-text="previewData.title"></h3>
+                </div>
+                <div class="flex items-center gap-3 shrink-0">
+                    <!-- 告警图左右翻页计数 (仅告警图且总数 > 1 时显示) -->
+                    <span x-show="previewData.type === 'image' && previewTotal > 1"
+                        class="text-[11px] font-mono text-slate-400 bg-slate-800/60 px-2.5 py-1 rounded-full whitespace-nowrap">
+                        <span class="text-rkblue font-bold" x-text="Math.max(previewIndex + 1, 1)"></span>
+                        <span class="mx-1 text-slate-500">/</span>
+                        <span x-text="previewTotal"></span>
+                        <span class="ml-2 text-slate-500 hidden md:inline">← → 键 / 鼠标拖动 / 两侧按钮翻页</span>
+                    </span>
+                    <button @click="closePreviewModal()"
+                        class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition">
+                        <i class="ph ph-x text-xl"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 主视图放大区域 (统一尺寸与比例) -->
+            <div class="flex-1 bg-black flex items-center justify-center overflow-hidden relative w-full h-full min-h-0"
+                :class="previewData.type === 'live' ? 'p-0' : 'p-1.5'"
+                :class="previewData.type === 'image' && previewTotal > 1 ? 'cursor-grab active:cursor-grabbing' : ''"
+                x-data="{ _touchStartX: 0, _touchStartY: 0, _touchStartT: 0, _dragStartX: 0, _dragStartY: 0, _dragging: false }"
+                :style="previewData.type === 'image' ? 'touch-action: pan-y;' : ''"
+                @touchstart.passive="_touchStartX = $event.touches[0].clientX; _touchStartY = $event.touches[0].clientY; _touchStartT = Date.now()"
+                @touchend.passive="
+                      const dt = Date.now() - _touchStartT;
+                      if (dt > 600 || previewData.type !== 'image' || previewTotal <= 1) return;
+                      const dx = $event.changedTouches[0].clientX - _touchStartX;
+                      const dy = $event.changedTouches[0].clientY - _touchStartY;
+                      if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
+                      dx < 0 ? previewNext() : previewPrev();
+                  "
+                @mousedown="if (previewData.type === 'image' && previewTotal > 1) { _dragStartX = $event.clientX; _dragStartY = $event.clientY; _dragging = true; }"
+                @mouseup="
+                      if (!_dragging) return;
+                      _dragging = false;
+                      const dx = $event.clientX - _dragStartX;
+                      const dy = $event.clientY - _dragStartY;
+                      if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
+                      _justDragged = true;
+                      setTimeout(() => { _justDragged = false; }, 300);
+                      dx < 0 ? previewNext() : previewPrev();
+                  "
+                @mouseleave="_dragging = false">
+                <!-- 左翻页箭头 (仅告警图且总数 > 1) -->
+                <button x-show="previewData.type === 'image' && previewTotal > 1" @click.stop="previewPrev()"
+                    aria-label="上一张"
+                    class="group absolute left-2 md:left-4 top-1/2 -translate-y-1/2 z-40 w-11 h-11 md:w-14 md:h-14 rounded-full bg-black/60 hover:bg-rkblue/80 border border-slate-700/60 hover:border-rkblue text-white flex items-center justify-center transition-all backdrop-blur-sm shadow-lg active:scale-95">
+                    <i class="ph ph-caret-left text-2xl md:text-3xl group-hover:scale-110 transition-transform"></i>
+                </button>
+
+                <template x-if="previewData.type === 'image'">
+                    <img :src="previewData.src" :key="previewIndex + ':' + previewData.src"
+                        class="w-full h-full object-contain rounded-lg shadow-2xl transition-all duration-300 select-none"
+                        draggable="false" />
+                </template>
+                <template x-if="previewData.type === 'live'">
+                    <div class="relative w-full h-full flex items-center justify-center transition-[overflow] duration-300"
+                        :class="previewZoomed ? 'overflow-auto cursor-zoom-out' : 'overflow-hidden cursor-zoom-in'">
+                        <img :src="showPreviewModal ? previewData.src : ''"
+                            class="w-full h-full object-contain rounded-lg shadow-2xl transition-transform duration-300 origin-center"
+                            :class="previewZoomed ? 'scale-[1.6]' : 'scale-100'" @click="previewZoomed = !previewZoomed"
+                            @error="previewData.streamError = true; _onStreamError($event, previewData.camId)"
+                            @load="previewData.streamError = false; _onStreamLoad(previewData.camId)" />
+                        <div x-show="previewData.streamError"
+                            class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 pointer-events-none">
+                            <i class="ph ph-wifi-slash text-5xl text-slate-600"></i>
+                            <span class="text-sm">该通道暂未拉取到视频流，请稍候或检查视频源</span>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- 右翻页箭头 (仅告警图且总数 > 1) -->
+                <button x-show="previewData.type === 'image' && previewTotal > 1" @click.stop="previewNext()"
+                    aria-label="下一张"
+                    class="group absolute right-2 md:right-4 top-1/2 -translate-y-1/2 z-40 w-11 h-11 md:w-14 md:h-14 rounded-full bg-black/60 hover:bg-rkblue/80 border border-slate-700/60 hover:border-rkblue text-white flex items-center justify-center transition-all backdrop-blur-sm shadow-lg active:scale-95">
+                    <i class="ph ph-caret-right text-2xl md:text-3xl group-hover:scale-110 transition-transform"></i>
+                </button>
+            </div>
+
+            <!-- 底部 Footer -->
+            <!-- 底部 Bar: 实时流全屏时同样隐藏 -->
+            <div x-show="previewData.type !== 'live'"
+                class="px-5 py-2.5 border-t border-slate-800 bg-slate-950 shrink-0 flex justify-between items-center text-xs text-slate-400 font-mono">
+                <div class="flex items-center gap-3">
+                    <span>通道: <span class="text-slate-200 font-semibold" x-text="previewData.camera"></span></span>
+                    <span x-show="previewData.type === 'live'" class="text-slate-500">
+                        <kbd
+                            class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">ESC</kbd>
+                        <span class="ml-1">退出全屏</span>
+                    </span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span x-show="previewData.type === 'image' && previewTotal > 1"
+                        class="text-slate-500 hidden md:inline">
+                        <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">←</kbd>
+                        <kbd
+                            class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 ml-1">→</kbd>
+                        <span class="ml-2">翻页</span>
+                    </span>
+                    <a :href="previewData.type === 'live' ? `/api/snapshot?cam_id=${previewData.camId}&t=${timestamp}` : previewData.src"
+                        target="_blank" download
+                        class="text-rkblue hover:underline flex items-center gap-1.5 font-semibold">
+                        <i class="ph ph-download-simple text-sm"></i> 下载原图
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 登录遮罩: 后端只守 /api/*, 页面和静态资源照常加载,
+         所以这层由前端按 loggedIn 自己控制显隐. -->
+    <div x-show="!loggedIn" style="display: none;"
+        class="fixed inset-0 z-[999999] flex items-center justify-center bg-slate-950">
+        <div class="w-full max-w-sm mx-4">
+            <div class="glass-panel rounded-2xl p-8 border border-slate-700/50 shadow-2xl">
+                <div class="flex flex-col items-center mb-6">
+                    <i class="ph ph-shield-check text-4xl text-rkblue mb-3"></i>
+                    <h1 class="text-lg font-bold text-slate-100">算法盒子</h1>
+                    <p class="text-xs text-slate-500 mt-1">请输入账号密码以进入监控台</p>
+                </div>
+
+                <div class="space-y-3">
+                    <input type="text" x-model="loginUser" @keydown.enter="doLogin()"
+                        autocomplete="username" placeholder="用户名"
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-200 focus:border-rkblue outline-none transition">
+                    <input type="password" x-model="loginPass" @keydown.enter="doLogin()"
+                        autocomplete="current-password" placeholder="密码"
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-200 focus:border-rkblue outline-none transition">
+
+                    <div x-show="loginError" class="text-xs text-red-400 flex items-center gap-1.5">
+                        <i class="ph ph-warning-circle"></i>
+                        <span x-text="loginError"></span>
+                    </div>
+
+                    <button @click="doLogin()" :disabled="loginLoading"
+                        class="w-full bg-rkblue text-slate-900 py-2.5 rounded-lg text-sm font-bold shadow-[0_0_15px_rgba(0,210,255,0.3)] hover:shadow-[0_0_25px_rgba(0,210,255,0.6)] transition disabled:opacity-50 flex items-center justify-center gap-2">
+                        <i x-show="loginLoading" class="ph ph-spinner animate-spin"></i>
+                        <span x-text="loginLoading ? '登录中...' : '登 录'"></span>
+                    </button>
+                </div>
+
+                <p class="text-[10px] text-slate-600 mt-5 text-center">忘记密码时，改设备上 <span
+                        class="font-mono">config/config.json</span> 的 auth 段</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function aiBoxApp() {
+            return {
+                currentTab: 'dashboard',
+                // 登录态: 后端只守 /api/*, 页面照常加载, 未登录时前端盖一层登录遮罩
+                loggedIn: false,
+                loginUser: '',
+                loginPass: '',
+                loginError: '',
+                loginLoading: false,
+                // 当前登录者信息 (来自 /api/me: 用户名 + 本次会话开始时间)
+                currentUser: null,
+                showUserMenu: false,
+                _pollTimers: [],
+                menus: [
+                    { id: 'dashboard', name: '总览大屏', icon: 'ph ph-squares-four' },
+                    { id: 'live', name: '流媒体监控', icon: 'ph ph-presentation-chart' },
+                    { id: 'alarms', name: '告警中心', icon: 'ph ph-warning-circle' },
+                    { id: 'settings', name: '参数与配置', icon: 'ph ph-gear' },
+                ],
+                status: { cpu: 20, npu: 10, memory: 30, uptime: 'Loading...', active_cameras: 0, engine_online: false },
+                alarms: [],
+                alarmFilter: 'all',
+                alarmDateFilter: 'all',     // 'all' 或 'YYYYMMDD' 8位字符串
+                showDatePicker: false,       // 日期下拉展开状态
+                alarmCameraFilter: 'all',   // 'all' 或 通道 id
+                showCameraPicker: false,    // 通道下拉展开状态
+                // 预览图刚被鼠标拖拽过的标志 (见 onPreviewBackdropClick)
+                _justDragged: false,
+                // 告警中心批量删除: 选择模式开关 + 已选中项.
+                // 存 alarm.image 路径而不是下标: 列表是轮询刷新的, 新告警会插到最前,
+                // 下标会整体漂移, 而 image 路径唯一且稳定.
+                alarmSelectMode: false,
+                selectedAlarms: [],
+                // 告警中心"类别下拉框"展开状态 + 上下弹开方向 + 高度 (同 Tasks 下拉框策略)
+                alarmCategoryDropdownOpen: false,
+                alarmCatUp: false,
+                alarmCatPanelMaxH: 288,
+                timestamp: Date.now(),
+                notifications: [],
+                showNotifications: false,
+                showNotifModal: false,
+                activeNotif: {},
+                camStatus: {},  // 字典: cam.id -> true(在线) / false(离线)
+                camStreamKey: {}, // 字典: cam.id -> timestamp 强制重新拉流使用
+                visibleCams: new Set(),     // 当前已分配到 :src (即正在推流) 的摄像头 id
+                camWaitQueue: new Set(),    // 在视口里但还没拿到推流配额的摄像头 id
+                camObserver: null,          // IntersectionObserver 实例
+                observedCamEls: new Map(),  // camId -> Set<element>
+                MAX_LIVE_STREAMS: 4,        // 同屏最多同时推流的路数，留出余量避免触发浏览器 6 并发上限
+
+                // 当前模型支持的类别 (从后端 /api/status.model_classes 注入；fallback 默认 4 类)
+                modelClasses: [],
+                // 类名 -> 视觉样式 表 (key 严格匹配后端 GetActiveClassNames() 返回的字符串)
+                _classStyle: {
+                    // 'fallen tree' 保留作为兼容样式：当前默认 UI 用不到（allTasks fallback 已不再列出），
+                    // 但 4 类模型下后端 /api/status 注入 model_classes 时仍能正确染色，且历史告警 key 命中。
+                    'fallen tree': { color: 'emerald', bg: 'bg-emerald-500 text-white', activeClass: 'border-emerald-500 text-emerald-400 bg-emerald-500/10 shadow-[0_0_8px_rgba(52,211,153,0.3)]' },
+                    'landslide': { color: 'amber', bg: 'bg-amber-500 text-white', activeClass: 'border-amber-500 text-amber-400 bg-amber-500/10 shadow-[0_0_8px_rgba(251,191,36,0.3)]' },
+                    'road collapse': { color: 'rose', bg: 'bg-rose-500 text-white', activeClass: 'border-rose-500 text-rose-400 bg-rose-500/10 shadow-[0_0_8px_rgba(244,63,94,0.3)]' },
+                    'stone': { color: 'violet', bg: 'bg-violet-500 text-white font-bold', activeClass: 'border-violet-500 text-violet-400 bg-violet-500/10 shadow-[0_0_8px_rgba(139,92,246,0.3)]' },
+                },
+                _defaultStyle: { color: 'slate', bg: 'bg-slate-500 text-white', activeClass: 'border-slate-500 text-slate-300 bg-slate-500/10 shadow-[0_0_8px_rgba(100,116,139,0.3)]' },
+
+                // 流媒体 tile "AI 检测任务"开关区用的类别列表:
+                //   1) 后端注入的 modelClasses 优先 (带后端实际输出色)
+                //   2) 未拉到 /api/status 时, 退回 presetClassOptions (写死的默认 3 类)
+                //   3) 任何阶段都追加用户在 Tasks 多选框里加的 customClassOptions
+                // 这样用户在"参数与配置"里手动添加的自定义类别 (如 "111") 也会出现在
+                // 每个视频下方的 AI 检测任务开关里, 跟告警画廊下拉保持一致.
+                get allTasks() {
+                    const seen = new Set();
+                    const out = [];
+                    const push = (c, source) => {
+                        if (!c || !c.key || seen.has(c.key)) return;
+                        seen.add(c.key);
+                        // 优先用传入的样式 (modelClasses 已带 bg/color), 否则按 key 查表, 最后 slate 兜底
+                        const style = (c.bg && c.color) ? c : (this._classStyle[c.key] || this._defaultStyle);
+                        out.push({
+                            key: c.key,
+                            label: c.label || c.key,
+                            color: style.color,
+                            bg: style.bg,
+                            activeClass: style.activeClass,
+                            source: source,
+                        });
+                    };
+                    if (this.modelClasses && this.modelClasses.length > 0) {
+                        for (const c of this.modelClasses) push(c, 'model');
+                    } else {
+                        for (const c of (this.presetClassOptions || [])) push(c, 'preset');
+                    }
+                    for (const c of (this.customClassOptions || [])) push(c, 'custom');
+                    return out;
+                },
+
+                // 流媒体 tile 按摄像头过滤后的 AI 任务开关列表.
+                //  - model / preset 类别全流通用 (模型能检测, 给每个摄像头都提供开关)
+                //  - custom (用户自定义) 类别只在该 cam.tasks 已勾选时才出现, 避免所有
+                //    流都冒出一个无关的 "111" 按钮. 用户要新增时, 先去参数与配置里加好,
+                //    再回到该摄像头手动勾选, 这时按钮就会浮现.
+                tasksFor(cam) {
+                    const camTasks = (cam && Array.isArray(cam.tasks)) ? cam.tasks : [];
+                    return this.allTasks.filter(t => t.source !== 'custom' || camTasks.includes(t.key));
+                },
+
+                // 告警中心下拉框用的"全量类别"列表 (按 key 去重, 按优先级补全样式):
+                //   1) 后端注入的 modelClasses (优先, 因为它带了后端实际输出色)
+                //   2) 前端默认 presetClassOptions (兜底, 没等到后端时也要能用)
+                //   3) 用户在 Tasks 多选框里加的 customClassOptions (自定义)
+                //   4) 已经写在任意 cam.tasks 里的 key (历史通道引用的自定义 key, 别让它从下拉里消失)
+                // 这样新增的自定义类别会同步出现在告警筛选里, 不会因为 modelClasses 没注入就被吞掉.
+                get alarmCategoryOptions() {
+                    const seen = new Set();
+                    const out = [];
+                    const push = (c, source) => {
+                        if (!c || !c.key || seen.has(c.key)) return;
+                        seen.add(c.key);
+                        // 优先用传入的 if 后端已经带样式的, 否则按 key 在 _classStyle 查, 再否则用 slate 兜底
+                        const style = (c.bg && c.color) ? c : (this._classStyle[c.key] || this._defaultStyle);
+                        out.push({
+                            key: c.key,
+                            label: c.label || c.key,
+                            color: style.color,
+                            bg: style.bg,
+                            activeClass: style.activeClass,
+                            source: source,  // 'model' / 'preset' / 'custom' / 'cam', 仅作调试
+                        });
+                    };
+                    for (const c of (this.modelClasses || [])) push(c, 'model');
+                    for (const c of (this.presetClassOptions || [])) push(c, 'preset');
+                    for (const c of (this.customClassOptions || [])) push(c, 'custom');
+                    // 通道引用: 这里不要求有对应配置项, key 也在下拉里出现. label 用 fallback 表
+                    if (this.config && Array.isArray(this.config.cameras)) {
+                        for (const cam of this.config.cameras) {
+                            if (!cam || !Array.isArray(cam.tasks)) continue;
+                            for (const k of cam.tasks) {
+                                if (k && !seen.has(k)) {
+                                    seen.add(k);
+                                    const style = this._classStyle[k] || this._defaultStyle;
+                                    out.push({
+                                        key: k,
+                                        label: this._labelFromType(k),
+                                        color: style.color,
+                                        bg: style.bg,
+                                        activeClass: style.activeClass,
+                                        source: 'cam',
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    return out;
+                },
+                // 头部按钮 / 下拉面板里要显示的当前选中项 label.
+                get alarmCurrentLabel() {
+                    if (this.alarmFilter === 'all') return '全部告警';
+                    const m = (this.alarmCategoryOptions || []).find(o => o.key === this.alarmFilter);
+                    return m ? m.label : '全部告警';
+                },
+                // 给一个 key 拿到对应样式，缺省返回 _defaultStyle
+                _styleOf(key) {
+                    return this._classStyle[key] || this._defaultStyle;
+                },
+
+                // 把 type 字符串拆成原始类别数组（按 + 或逗号分隔），空值过滤掉
+                _splitAlarmTypes(typeOrTypes) {
+                    if (Array.isArray(typeOrTypes)) {
+                        return typeOrTypes.filter(Boolean);
+                    }
+                    return (typeOrTypes || '').split(/[+,]/).map(s => s.trim()).filter(Boolean);
+                },
+
+                // 把单个类别字符串匹配成单个 badge（向后兼容旧数据；类别名和样式都来自 _classStyle 表）
+                _matchOneBadge(type) {
+                    const t = (type || '').toLowerCase();
+                    // 优先用 key 直接命中 _classStyle 表
+                    for (const key of Object.keys(this._classStyle)) {
+                        if (t.includes(key)) {
+                            return { name: this._labelFromType(key), bg: this._classStyle[key].bg, key: key };
+                        }
+                    }
+                    // 中文 fallback（兼容历史数据没有英文 type 的情况）
+                    // 'fallen tree' 仅在 4 类模型下才会被实际命中；3 类模型下历史告警不会出现该字符串
+                    if (t.includes('tree') || t.includes('倒伏') || t.includes('树木')) {
+                        return { name: '倒伏树木', bg: this._classStyle['fallen tree'].bg, key: 'fallen tree' };
+                    }
+                    if (t.includes('landslide') || t.includes('滑坡')) {
+                        return { name: '山体滑坡', bg: this._classStyle['landslide'].bg, key: 'landslide' };
+                    }
+                    if (t.includes('collapse') || t.includes('塌陷')) {
+                        return { name: '道路塌陷', bg: this._classStyle['road collapse'].bg, key: 'road collapse' };
+                    }
+                    if (t.includes('stone') || t.includes('rockfall') || t.includes('落石') || t.includes('碎石')) {
+                        return { name: '碎石落石', bg: this._classStyle['stone'].bg, key: 'stone' };
+                    }
+                    return { name: type || '异常告警', bg: this._defaultStyle.bg, key: 'other' };
+                },
+                // 从 modelClasses 找中文 label，找不到就用 key 本身
+                _labelFromType(key) {
+                    if (this.modelClasses) {
+                        const m = this.modelClasses.find(c => c.key === key);
+                        if (m && m.label) return m.label;
+                    }
+                    const fallback = { 'fallen tree': '倒伏树木', 'landslide': '山体滑坡', 'road collapse': '道路塌陷', 'stone': '碎石落石' };
+                    return fallback[key] || key;
+                },
+
+                // 给定一条告警，返回一组 badge（处理单类别或多类别并存的情况）
+                getCategoryBadges(alarm) {
+                    const types = (alarm && Array.isArray(alarm.types) && alarm.types.length > 0)
+                        ? alarm.types
+                        : this._splitAlarmTypes(alarm && alarm.type);
+                    if (types.length === 0) {
+                        return [this._matchOneBadge(alarm && alarm.type)];
+                    }
+                    // 去重但保留首次出现顺序
+                    const seen = new Set();
+                    const result = [];
+                    for (const t of types) {
+                        const key = (t || '').toLowerCase();
+                        if (seen.has(key)) continue;
+                        seen.add(key);
+                        result.push(this._matchOneBadge(t));
+                    }
+                    return result;
+                },
+
+                // 兼容旧 API：返回第一条 badge
+                getCategoryBadge(alarm) {
+                    const arr = this.getCategoryBadges(alarm);
+                    return arr[0] || { name: '异常告警', bg: 'bg-blue-500 text-white', key: 'other' };
+                },
+
+                // ---- 三个筛选各自独立成一个判定函数 ----
+                // 拆出来的目的: 让"下游筛选项"能基于"上游已筛结果"来统计,
+                // 实现 类别 → 日期 → 通道 的级联. 否则三个下拉各自对着全量 alarms
+                // 统计, 选了落石还是会列出没有落石的日期和通道.
+                _matchCategory(a) {
+                    if (this.alarmFilter === 'all') return true;
+                    return this.getCategoryBadges(a).some(b => b.key === this.alarmFilter);
+                },
+                _matchDate(a) {
+                    if (this.alarmDateFilter === 'all') return true;
+                    return this.extractDateFromFilename(a.time) === this.alarmDateFilter;
+                },
+                _matchCamera(a) {
+                    if (this.alarmCameraFilter === 'all') return true;
+                    return (a.camera || '').trim() === this.alarmCameraFilter;
+                },
+
+                // 类别筛选之后的集合 → 日期下拉基于它统计
+                get alarmsAfterCategory() {
+                    return this.alarms.filter(a => this._matchCategory(a));
+                },
+                // 类别 + 日期筛选之后的集合 → 通道下拉基于它统计
+                get alarmsAfterDate() {
+                    return this.alarmsAfterCategory.filter(a => this._matchDate(a));
+                },
+                // 日期 + 通道筛选之后的集合 → 类别下拉基于它统计.
+                // 每个下拉都"排除自己、应用另外两个", 这样不管是先选类别还是先选日期,
+                // 打开任意一个下拉看到的都是"在其余条件下还剩下什么", 不会给出点了没结果的选项.
+                get alarmsAfterDateCamera() {
+                    return this.alarms.filter(a => this._matchDate(a) && this._matchCamera(a));
+                },
+
+                get filteredAlarms() {
+                    return this.alarmsAfterDate.filter(a => this._matchCamera(a));
+                },
+
+                // 从告警文件名提取 YYYYMMDD (匹配 _YYYYMMDD_ 模式)
+                // 文件名示例: D1_landslide+stone_20260920_143000.jpg
+                extractDateFromFilename(filename) {
+                    if (!filename) return '';
+                    const m = filename.match(/_(\d{8})_/);
+                    return m ? m[1] : '';
+                },
+
+                // 当前 alarms 里出现过的所有日期 (YYYY-MM-DD 格式), 倒序 (新→旧)
+                get availableDates() {
+                    // 基于"类别筛选之后"统计: 选了落石就只列有落石的日期
+                    const counts = {};
+                    for (const a of this.alarmsAfterCategory) {
+                        const d = this.extractDateFromFilename(a.time);
+                        if (d) counts[d] = (counts[d] || 0) + 1;
+                    }
+                    // 当前已选的日期即使在新口径下没数据了也要保留 (显示 0 条),
+                    // 否则切换类别时下拉里的选中项会凭空消失, 看起来像 bug.
+                    if (this.alarmDateFilter !== 'all' && counts[this.alarmDateFilter] === undefined) {
+                        counts[this.alarmDateFilter] = 0;
+                    }
+                    return Object.keys(counts)
+                        .sort()
+                        .reverse()
+                        .map(d => {
+                            const yyyy = d.substring(0, 4);
+                            const mm = d.substring(4, 6);
+                            const dd = d.substring(6, 8);
+                            return {
+                                key: d,                                  // '20260920'
+                                label: `${yyyy}-${mm}-${dd}`,            // '2026-09-20'
+                                count: counts[d]
+                            };
+                        });
+                },
+
+                // 告警中心"通道下拉框"的选项: 当前告警里出现过的通道 + 各自条数.
+                // 从 alarms 数据里提取, 而不是直接列 config.cameras ——
+                // 历史告警可能来自已经删掉的通道, 那些图还在磁盘上, 应该还能按它筛.
+                get availableCameras() {
+                    // 基于"类别 + 日期筛选之后"统计: 只列当前口径下真有告警的通道
+                    const counts = {};
+                    for (const a of this.alarmsAfterDate) {
+                        const id = (a.camera || '').trim();
+                        if (!id) continue;
+                        counts[id] = (counts[id] || 0) + 1;
+                    }
+                    if (this.alarmCameraFilter !== 'all' && counts[this.alarmCameraFilter] === undefined) {
+                        counts[this.alarmCameraFilter] = 0;
+                    }
+                    return Object.keys(counts).sort().map(id => {
+                        const cam = (this.config && Array.isArray(this.config.cameras))
+                            ? this.config.cameras.find(c => c.id === id) : null;
+                        return {
+                            key: id,
+                            // 有配置就显示"D1 · 北走廊", 通道已删就只显示 id
+                            label: (cam && cam.name) ? (id + ' · ' + cam.name) : id,
+                            count: counts[id],
+                        };
+                    });
+                },
+
+                // ===== 批量删除相关 (告警中心) =====
+                get selectedAlarmCount() {
+                    return this.selectedAlarms.length;
+                },
+                // 当前筛选结果是否已被全选 (驱动"全选/取消全选"按钮文案)
+                get allFilteredSelected() {
+                    const list = this.filteredAlarms;
+                    return list.length > 0 && list.every(a => this.selectedAlarms.includes(a.image));
+                },
+
+                // UI 状态
+                toast: { show: false, message: '', type: 'success' },
+                showPassword: false,
+                serverTab: 0,
+                showCameraModal: false,
+                showPreviewModal: false,
+                previewData: { title: '', type: 'image', src: '', camera: '', time: '', category: '', bg: '', categories: [], camId: '', streamError: false },
+                // 预览窗: 当前告警的"身份" (image|time), 而不是固定下标.
+                // 为什么存身份: /api/alerts 是轮询的, 且列表最新在前 (新告警插到最前),
+                // 弹窗打开期间一旦有新图进来, filteredAlarms 全体下标后移, 存死的下标就会
+                // 指向错误的图, 导致"新加载进来的图片不在翻页范围内". 存身份则每次翻页都
+                // 在实时列表里重新定位, 新图自动纳入范围.
+                previewKey: '',
+
+                // 当前翻页所依据的实时列表 (只对告警图有效; 实时流放大返回空, 不显示翻页 UI).
+                get previewList() {
+                    if (!this.previewData || this.previewData.type !== 'image') return [];
+                    return this.filteredAlarms;
+                },
+                // 当前图在实时列表里的下标; 找不到 (被过滤掉/被清空) 返回 -1.
+                get previewIndex() {
+                    if (!this.previewKey) return -1;
+                    return this.previewList.findIndex(a => ((a.image || '') + '|' + (a.time || '')) === this.previewKey);
+                },
+                // 实时总数, 新告警轮询进来会自动 +1.
+                get previewTotal() {
+                    return this.previewList.length;
+                },
+                // 预览窗: 是否处于整体放大状态 (点击图片切换)
+                previewZoomed: false,
+                editingIndex: -1,
+                tempCamera: { id: '', name: '', url: '', tasks: [], model: '' },
+
+                // ---------- Tasks 多选下拉框数据 ----------
+                // 多选下拉框展开状态.
+                tasksDropdownOpen: false,
+                // 展开方向: false=向下 (top-full), true=向上 (bottom-full). 打开时按可用空间自动选.
+                tasksDropdownUp: false,
+                // 面板实际 max-height (px). 打开时按可视区剩余空间动态算, 保证整块 (含底部自定义输入行) 不出屏.
+                tasksPanelMaxH: 288,
+
+                // 当前选中模型的类别 (从 /api/model_classes?name= 拉取, 即模型配套的类别文件).
+                // modelClassSource: '' 未加载 / 'sidecar' 模型自带类别文件 / 'none' 模型没有类别文件.
+                modelClassOptions: [],
+                modelClassSource: '',
+                modelClassesLoading: false,
+
+                // 预设类别 (任何时候都可选, 不会因为换模型被清掉).
+                //   isPreset: true 用于下拉面板里给"预设"小徽章.
+                //   key 是写入 tempCamera.tasks / 传给后端的英文 key, label 是给用户看的中文名.
+                presetClassOptions: [
+                    { key: 'landslide', label: '山体滑坡', isPreset: true },
+                    { key: 'road collapse', label: '道路塌陷', isPreset: true },
+                    { key: 'stone', label: '碎石落石', isPreset: true },
+                ],
+
+                // 用户在本次会话里手动添加的自定义类别 (跨 openCamera/close 保留, 跨通道也保留).
+                //   isCustom: true 用于"自定义"小徽章.
+                customClassOptions: [],
+
+                // 自定义类别输入框当前值 (回车 / 点添加按钮后写入 customClassOptions 并清空).
+                customTaskInput: '',
+
+                openImagePreview(alarm) {
+                    // 记录身份即可, 下标由 previewIndex getter 实时算.
+                    this._fillPreviewData(alarm);
+                    this.showPreviewModal = true;
+                },
+
+                // 把一张告警填入 previewData, 并记录其身份 (给打开 / 翻页 共用).
+                _fillPreviewData(alarm) {
+                    if (!alarm) return;
+                    this.previewKey = (alarm.image || '') + '|' + (alarm.time || '');
+                    const badges = this.getCategoryBadges(alarm);
+                    const primary = badges[0] || { name: '异常告警', bg: 'bg-blue-500 text-white', key: 'other' };
+                    this.previewData = {
+                        title: '高清告警抓拍放大图 - ' + badges.map(b => b.name).join(' / '),
+                        type: 'image',
+                        src: alarm.image,
+                        camera: alarm.camera || '未知通道',
+                        time: alarm.time || '',
+                        category: primary.name,
+                        bg: primary.bg,
+                        categories: badges,
+                        camId: alarm.camera || 'D1',
+                        streamError: false
+                    };
+                },
+
+                // 左右翻页: 每次都基于"身份"在实时列表里重新定位, 再取相邻一张.
+                // 列表是轮询的, 新告警会插到最前, 因此下标必须实时算, 不能存死.
+                // 循环: 末尾再 next 回到首张, 首张再 prev 跳到末尾.
+                previewNext() {
+                    const list = this.previewList;
+                    if (list.length <= 1) return;
+                    this.previewZoomed = false;
+                    const i = this.previewIndex;                       // 可能为 -1 (当前图已被过滤/清空)
+                    const next = (i < 0) ? 0 : (i + 1) % list.length;  // 定位失败则跳首张
+                    this._fillPreviewData(list[next]);
+                },
+                previewPrev() {
+                    const list = this.previewList;
+                    if (list.length <= 1) return;
+                    this.previewZoomed = false;
+                    const i = this.previewIndex;                       // 可能为 -1
+                    const prev = (i < 0) ? (list.length - 1) : (i - 1 + list.length) % list.length;
+                    this._fillPreviewData(list[prev]);                 // 定位失败则跳末张
+                },
+
+                openLivePreview(cam) {
+                    this.previewKey = '';   // 实时流放大无翻页, 清掉告警图身份
+                    this.previewData = {
+                        title: cam.name + ' (' + cam.id + ') - 实时流媒体监控放大',
+                        type: 'live',
+                        src: `/api/stream?cam_id=${cam.id}&t=${Date.now()}`,
+                        camera: cam.name + ' (' + cam.id + ')',
+                        time: new Date().toLocaleTimeString(),
+                        category: 'LIVE STREAM',
+                        bg: 'bg-red-500 text-white font-bold animate-pulse',
+                        camId: cam.id,
+                        streamError: false
+                    };
+                    this.previewZoomed = false;
+                    this.showPreviewModal = true;
+                },
+
+                // 关闭预览窗 (同时重置放大状态 + 身份, 避免下次打开时残留)
+                // 点背景关闭预览, 但刚拖拽过就忽略这次 click.
+                // 鼠标在图片上按下、拖到背景上松开时, click 会派发到共同祖先(遮罩)本身,
+                // 不拦的话拖一下翻页就把预览窗口关掉了.
+                onPreviewBackdropClick() {
+                    if (this._justDragged) return;
+                    this.closePreviewModal();
+                },
+
+                closePreviewModal() {
+                    this.previewZoomed = false;
+                    this.previewKey = '';
+                    this.showPreviewModal = false;
+                },
+
+                // 模型状态
+                models: [],
+                selectedFile: null,
+                isUploading: false,
+                uploadProgress: 0,
+
+                // 系统状态
+                status: { cpu: 0, npu: 0, memory: 0, uptime: '0h 0m' },
+
+                // 后端只守 /api/*, 页面照常加载. 进来先探一次, 401 就只弹登录窗,
+                // 通过之后才真正开始拉数据.
+                async init() {
+                    this._appStartedAt = Date.now();
+                    this.checkLogin();
+                },
+
+                async checkLogin() {
+                    try {
+                        const res = await fetch('/api/status', { cache: 'no-store' });
+                        if (res.status === 401) { this.loggedIn = false; return; }
+                        this.loggedIn = true;
+                        this.fetchMe();
+                        this._boot();
+                    } catch (e) {
+                        // 后端没起来 / 网络异常, 也显示登录窗, 比白屏好判断
+                        this.loggedIn = false;
+                    }
+                },
+
+                async doLogin() {
+                    if (!this.loginUser || !this.loginPass) {
+                        this.loginError = '请输入用户名和密码';
+                        return;
+                    }
+                    this.loginError = '';
+                    this.loginLoading = true;
+                    try {
+                        const res = await fetch('/api/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ username: this.loginUser, password: this.loginPass })
+                        });
+                        if (res.ok) {
+                            this.loggedIn = true;
+                            this.loginPass = '';
+                            this.fetchMe();
+                            this._boot();
+                        } else {
+                            const d = await res.json().catch(() => ({}));
+                            this.loginError = d.error || '登录失败';
+                        }
+                    } catch (e) {
+                        this.loginError = '网络异常，请检查设备是否在线';
+                    }
+                    this.loginLoading = false;
+                },
+
+                // 当前登录者信息. 失败也不影响主流程, 最多菜单里显示不出用户名.
+                async fetchMe() {
+                    try {
+                        const res = await fetch('/api/me', { cache: 'no-store' });
+                        if (res.ok) this.currentUser = await res.json();
+                    } catch (e) { /* 忽略 */ }
+                },
+
+                // login_at 是毫秒时间戳, 转成本地时间字符串
+                formatLoginTime(ms) {
+                    if (!ms) return '-';
+                    try {
+                        return new Date(ms).toLocaleString('zh-CN', { hour12: false });
+                    } catch (e) { return '-'; }
+                },
+
+                async doLogout() {
+                    if (!confirm('确定要退出登录吗？')) return;
+                    try { await fetch('/api/logout', { method: 'POST' }); } catch (e) { /* 清态即可 */ }
+                    this.loggedIn = false;
+                    this.loginPass = '';
+                    this.currentUser = null;
+                    this.showUserMenu = false;
+                    // 停掉轮询, 否则登出后还在不停打 401
+                    for (const id of (this._pollTimers || [])) clearInterval(id);
+                    this._pollTimers = [];
+                },
+
+                _boot() {
+                    // 记录启动时刻: 启动宽限期 (BOOT_GRACE_PERIOD 秒) 内通道状态通知一律静默,
+                    // 避免刚连上 / 重启后立刻刷出"通道无信号"警告.
+                    this.fetchConfig();
+                    this.fetchModels();
+                    this.fetchStatus();
+                    this.fetchAlarms();
+                    this.fetchNotifications();
+                    this.initChart();
+
+                    // 切换 tab 时把内容区滚回顶部.
+                    // 所有 tab 共用同一个滚动容器 (x-ref="tabScroll"), 切 tab 只是换 x-show 显隐,
+                    // 滚动位置会原样残留 —— 在总览滑到底部再切告警中心就直接停在底部.
+                    // 用 $watch 而不是在每个按钮上挂 @click, 这样侧边栏、"查看全部历史" 等入口全覆盖.
+                    this.$watch('currentTab', () => {
+                        const el = this.$refs.tabScroll;
+                        if (el) el.scrollTop = 0;
+                    });
+
+                    // 从 sessionStorage 恢复上次 camStatus 快照 (仅本标签页有效).
+                    // 配合 _setCamStatus 里的宽限期一起用: 重载后若通道状态没变,
+                    // 第一次 _setCamStatus 命中 "prev === online" 直接返回, 不会再推"通道无信号".
+                    // 只有命中 sessionStorage 时才记 boot baseline (即本次是 reload),
+                    // 单次会话不记, 走正常通知逻辑.
+                    try {
+                        const raw = sessionStorage.getItem(this.CAM_STATUS_SS_KEY);
+                        if (raw) {
+                            const obj = JSON.parse(raw);
+                            if (obj && typeof obj === 'object') {
+                                Object.assign(this.camStatus, obj);
+                                // 记下 reload 时的 baseline, 后续 _setCamStatus 用它判断
+                                // "是否和上次会话结束时的状态一样" → 是就静默.
+                                this._camStateAtBoot = { ...this.camStatus };
+                            }
+                        }
+                    } catch (e) { /* 解析失败 / 隐私模式 → 静默忽略 */ }
+
+                    // 初始化 IntersectionObserver，用于懒加载 MJPEG 推流避免超过浏览器 6 并发连接上限
+                    if ('IntersectionObserver' in window) {
+                        this.camObserver = new IntersectionObserver((entries) => {
+                            let changed = false;
+                            for (const entry of entries) {
+                                const camId = entry.target.dataset.camId;
+                                if (!camId) continue;
+                                if (entry.isIntersecting) {
+                                    if (!this.camWaitQueue.has(camId)) {
+                                        this.camWaitQueue.add(camId);
+                                        changed = true;
+                                    }
+                                } else {
+                                    if (this.camWaitQueue.has(camId)) {
+                                        this.camWaitQueue.delete(camId);
+                                        changed = true;
+                                    }
+                                    if (this.visibleCams.has(camId)) {
+                                        this.visibleCams.delete(camId);
+                                        changed = true;
+                                    }
+                                }
+                            }
+                            if (changed) {
+                                this._scheduleStreams();
+                                // 强制 Alpine.js 重新求值 :src
+                                this.visibleCams = new Set(this.visibleCams);
+                                this.camWaitQueue = new Set(this.camWaitQueue);
+                            }
+                        }, { rootMargin: '300px', threshold: 0.01 });
+                    }
+
+                    // 存起来: 登出时要停掉, 否则还在不停打 401
+                    this._pollTimers = [
+                        setInterval(() => {
+                            this.fetchStatus();
+                            this.timestamp = Date.now();
+                        }, 2000),
+                        setInterval(() => this.fetchAlarms(), 5000),
+                        setInterval(() => this.fetchNotifications(), 3000),
+                    ];
+
+                    // 定期检查摄像头在线状态 (使用 HEAD 请求，连接耗时极短且串行，所以不会拉爆连接数)
+                    this._pollTimers.push(setInterval(() => this.checkCamStatus(), 5000));
+                },
+
+                // 懒加载调度：把视口内但还没推流的摄像头升级到 visibleCams，保持同屏最大并发起 MAX_LIVE_STREAMS 路
+                _scheduleStreams() {
+                    if (this.MAX_LIVE_STREAMS <= 0) return;
+                    for (const camId of this.camWaitQueue) {
+                        if (this.visibleCams.size >= this.MAX_LIVE_STREAMS) break;
+                        if (!this.visibleCams.has(camId)) {
+                            this.visibleCams.add(camId);
+                        }
+                    }
+                },
+
+                observeCam(camId, el) {
+                    if (!el || !camId) return;
+                    if (!this.camObserver) return;
+                    if (!el.dataset.camId) el.dataset.camId = camId;
+                    let els = this.observedCamEls.get(camId);
+                    if (!els) { els = new Set(); this.observedCamEls.set(camId, els); }
+                    els.add(el);
+                    this.camObserver.observe(el);
+                },
+
+                unobserveCam(camId, el) {
+                    if (!el || !camId) return;
+                    if (this.camObserver) this.camObserver.unobserve(el);
+                    let els = this.observedCamEls.get(camId);
+                    if (els) {
+                        els.delete(el);
+                        if (els.size === 0) {
+                            this.observedCamEls.delete(camId);
+                            // 只有当所有观察元素都不见了才真正释放推流
+                            if (this.visibleCams.has(camId)) {
+                                this.visibleCams.delete(camId);
+                                this.visibleCams = new Set(this.visibleCams);
+                                this._scheduleStreams();
+                                this.visibleCams = new Set(this.visibleCams);
+                            }
+                            if (this.camWaitQueue.has(camId)) {
+                                this.camWaitQueue.delete(camId);
+                                this.camWaitQueue = new Set(this.camWaitQueue);
+                            }
+                        }
+                    }
+                },
+
+                async checkCamStatus() {
+                    if (!this.config.cameras) return;
+                    for (const cam of this.config.cameras) {
+                        try {
+                            const res = await fetch(`/api/snapshot?cam_id=${cam.id}&t=${Date.now()}`, { method: 'HEAD' });
+                            this._setCamStatus(cam.id, res.ok);
+                        } catch {
+                            this._setCamStatus(cam.id, false);
+                        }
+                    }
+                },
+
+                toggleCamTask(cam, taskKey) {
+                    if (!cam.tasks) cam.tasks = [];
+                    const idx = cam.tasks.indexOf(taskKey);
+                    if (idx >= 0) {
+                        cam.tasks.splice(idx, 1);
+                    } else {
+                        cam.tasks.push(taskKey);
+                    }
+                    this.saveCamTasks();
+                },
+
+                async saveCamTasks() {
+                    try {
+                        const res = await fetch('/api/config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.config)
+                        });
+                        if (res.ok) {
+                            this.showToast('任务设置已保存', 'success');
+                        }
+                    } catch (e) {
+                        this.showToast('保存失败: ' + e.message, 'error');
+                    }
+                },
+
+                // 模型上传功能
+                handleFileSelect(event) {
+                    const file = event.target.files[0];
+                    if (file) {
+                        this.selectedFile = file;
+                        this.uploadProgress = 0;
+                    }
+                },
+
+                async uploadModel() {
+                    if (!this.selectedFile) return;
+
+                    this.isUploading = true;
+                    this.uploadProgress = 0;
+
+                    // 使用 XMLHttpRequest 以便获取进度
+                    const xhr = new XMLHttpRequest();
+
+                    xhr.upload.addEventListener('progress', (event) => {
+                        if (event.lengthComputable) {
+                            this.uploadProgress = Math.round((event.loaded / event.total) * 100);
+                        }
+                    });
+
+                    xhr.addEventListener('load', () => {
+                        this.isUploading = false;
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            this.uploadProgress = 100;
+                            // 后端会回 {model, sidecar, classes}, 把"识别到几个类别"讲清楚,
+                            // 否则用户不知道类别文件到底生效没有.
+                            let msg = "模型导入成功！";
+                            try {
+                                const d = JSON.parse(xhr.responseText);
+                                if (d.model) {
+                                    msg = `模型 ${d.model} 导入成功`;
+                                    if (d.sidecar && d.classes > 0) msg += `，已识别 ${d.classes} 个类别`;
+                                    else if (d.sidecar) msg += "（类别文件已保存，但没解析出类别，请检查格式）";
+                                    else msg += "（包内无类别文件，将使用默认类别名）";
+                                }
+                            } catch (e) { /* 老版本后端返回纯文本, 用默认文案 */ }
+                            this.showToast(msg);
+                            this.selectedFile = null;
+                            this.fetchModels();
+                            setTimeout(() => this.uploadProgress = 0, 2000);
+                        } else {
+                            alert("上传失败：" + xhr.statusText);
+                            this.uploadProgress = 0;
+                        }
+                    });
+
+                    xhr.addEventListener('error', () => {
+                        this.isUploading = false;
+                        this.uploadProgress = 0;
+                        alert("上传出错，请检查网络或后端服务。");
+                    });
+
+                    xhr.open('POST', '/api/upload_model');
+                    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+                    xhr.setRequestHeader('X-File-Name', encodeURIComponent(this.selectedFile.name));
+                    xhr.send(this.selectedFile);
+                },
+
+                // 获取与删除模型
+                async fetchModels() {
+                    try {
+                        const res = await fetch('/api/models');
+                        if (res.ok) {
+                            this.models = await res.json();
+                        }
+                    } catch (e) { console.error('Failed to fetch models', e); }
+                },
+
+                async deleteModel(name) {
+                    if (confirm("确定要删除模型 " + name + " 吗？\n删除后关联此模型的视频流可能会启动失败。")) {
+                        try {
+                            const res = await fetch('/api/models?name=' + encodeURIComponent(name), { method: 'DELETE' });
+                            if (res.ok) {
+                                this.showToast("模型已删除");
+                                this.fetchModels();
+                            } else {
+                                alert("删除失败");
+                            }
+                        } catch (e) { alert("请求出错"); }
+                    }
+                },
+
+                // CRUD 方法
+                showToast(msg, type = 'success') {
+                    this.toast.message = msg;
+                    this.toast.type = type;
+                    this.toast.show = true;
+                    setTimeout(() => this.toast.show = false, 3500);
+                },
+
+                // ---------- 通道在线状态 & 「无信号」系统通知 ----------
+                // 所有对 camStatus 的写入都必须走 _setCamStatus,
+                // 这样"在线 <-> 离线"翻转时才能统一推送到右上角"系统通知"。
+                // 只要画面显示「当前通道无信号」(camStatus === false), 通知中心就会有记录。
+                _camNotifyState: {},          // camId -> { lastAt, notifiedOffline }
+                CAM_NOTIFY_COOLDOWN: 10000,   // 同一通道 10s 内最多推一条状态通知, 防抖
+                // 启动宽限期: 页面刚加载 / 后端刚启动时, 通道流还在握手, <img @error> 会先抛一次,
+                // 此时若通道真连不上会立刻被判定为"离线"并推送"通道无信号"通知,
+                // 用户感受是"重启程序又出现上次的警告", 实际是启动期瞬时检测结果.
+                // 宽限期内统一静默通道状态通知, 等通道稳定后再按正常规则推送.
+                _appStartedAt: 0,
+                BOOT_GRACE_PERIOD: 60000,     // 启动 60 秒内忽略通道状态通知 (覆盖 RTSP 重连握手)
+                // sessionStorage 缓存的 camStatus 快照 key (reload 后恢复, 让 _setCamStatus
+                // 拿到的 prev 是上次已知状态而不是 undefined, 避免"通道状态没变还误推送")
+                CAM_STATUS_SS_KEY: 'camStatusSnapshot.v1',
+                // reload 时记下"上次会话结束时的 camStatus"快照, _setCamStatus 用它判断
+                // "本次检测到的状态是否和上次一样" → 是的话不再推通知.
+                // 单次会话 (bootState === undefined) 跳过这条检查, 走正常逻辑.
+                _camStateAtBoot: {},
+
+                // 统一写入通道在线状态: 记录 在线<->离线 翻转, 推送到"系统通知" + 弹 toast
+                _setCamStatus(camId, online) {
+                    if (!camId) return;
+                    const prev = this.camStatus[camId];
+                    this.camStatus[camId] = online;
+                    // 持久化到 sessionStorage: reload 后恢复, 让"稳定状态"被识别为已知,
+                    // 即使重启后通道状态没变也不会被当成"新翻转"再推一条通知.
+                    try {
+                        sessionStorage.setItem(this.CAM_STATUS_SS_KEY,
+                            JSON.stringify(this.camStatus));
+                    } catch (e) { /* 隐私模式 / 容量满 → 静默 */ }
+                    // 启动宽限期: 仅对"这个 cam 本会话从未见过" (prev === undefined) 的
+                    // 首次检测做静默, 避免 reload 后立刻刷出"通道无信号".
+                    // 已知的稳定状态 (reload 后从 sessionStorage 恢复) 不会被这条规则误伤.
+                    const inGrace = this._appStartedAt
+                        && (Date.now() - this._appStartedAt < this.BOOT_GRACE_PERIOD);
+                    if (inGrace && prev === undefined) return;
+
+                    // 状态没变 → 不推送
+                    if (prev === online) return;
+                    // 首次赋值且为"在线" → 静默, 避免页面初载时对所有正常通道刷屏
+                    if (prev === undefined && online) return;
+                    // reload 后: 如果当前状态和上次会话结束时的状态一致 (boot baseline),
+                    // 说明是"用户已知的稳定状态", 不再推送通知 (避免"重启后又出现上次的警告").
+                    // 单次会话 (bootState === undefined) 跳过这条检查, 走正常逻辑.
+                    const bootState = this._camStateAtBoot[camId];
+                    if (bootState !== undefined && bootState === online) return;
+
+                    const ns = this._camNotifyState[camId]
+                        || (this._camNotifyState[camId] = { lastAt: 0, notifiedOffline: false });
+                    const now = Date.now();
+                    const name = this._camDisplayName(camId);
+
+                    if (!online) {
+                        // 转离线: 冷却期内只更新状态、不重复推送
+                        if (now - ns.lastAt < this.CAM_NOTIFY_COOLDOWN) return;
+                        ns.lastAt = now;
+                        ns.notifiedOffline = true;
+                        this.showToast(`通道离线：${name}`, 'warning');
+                        this._pushLocalNotification({
+                            type: 'error',
+                            title: `通道无信号：${camId}`,
+                            details: `通道 ${name} (${camId}) 视频流已断开，画面显示「当前通道无信号」。请检查摄像头电源、网络或 RTSP 地址。`
+                        });
+                    } else {
+                        // 如果从离线变回在线，更新 streamKey 强制 img 标签重新拉流
+                        this.camStreamKey[camId] = Date.now();
+                        
+                        // 转在线: 仅当之前推送过"离线"时, 才补一条恢复通知
+                        if (!ns.notifiedOffline) return;
+                        ns.lastAt = now;
+                        ns.notifiedOffline = false;
+                        this.showToast(`通道恢复：${name}`, 'success');
+                        this._pushLocalNotification({
+                            type: 'success',
+                            title: `通道恢复：${camId}`,
+                            details: `通道 ${name} (${camId}) 视频流已恢复。`
+                        });
+                    }
+                },
+
+                // 判断用户是否正在"主动监控"该路视频流
+                //   - 全屏预览窗打开 + 正在预览这条 cam → 算
+                //   - 流媒体 tab + cam 在视口内 (visibleCams) → 算
+                //   - 其他 (后台 / 切到其他 tab / 卡片滚出视口) → 不算, 静默忽略 @error/@load
+                _isActivelyMonitoring(camId) {
+                    if (!camId) return false;
+                    if (this.showPreviewModal && this.previewData && this.previewData.camId === camId) {
+                        return true;
+                    }
+                    return this.currentTab === 'live'
+                        && this.visibleCams
+                        && this.visibleCams.has(camId);
+                },
+
+                _camDisplayName(camId) {
+                    const cam = (this.cameras || []).find(c => c.id === camId);
+                    return cam ? cam.name : camId;
+                },
+
+                // 前端本地推送一条到通知中心 (不走后端持久化, 仅当前会话可见)
+                _pushLocalNotification({ title, details = '', type = 'info' }) {
+                    const now = new Date();
+                    const notif = {
+                        id: 'local-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+                        title,
+                        details,
+                        type,
+                        time: now.toLocaleString('zh-CN', { hour12: false }),
+                        read: false,
+                        local: true
+                    };
+                    if (!Array.isArray(this.notifications)) this.notifications = [];
+                    this.notifications.unshift(notif);
+                    // 限制前端本地通知最多 30 条，避免长会话内存膨胀
+                    if (this.notifications.length > 30) {
+                        this.notifications = this.notifications.slice(0, 30);
+                    }
+                },
+
+                // CPU / NPU 持续高负载告警的去抖状态
+                _loadAlertState: {
+                    cpuHighCount: 0,       // 连续 cpu 高读数次数
+                    npuHighCount: 0,       // 连续 npu 高读数次数
+                    lastCpuAlertAt: 0,     // 上次 cpu 告警时间戳
+                    lastNpuAlertAt: 0,     // 上次 npu 告警时间戳
+                },
+                CPU_HIGH_THRESHOLD: 95,   // CPU > 95% 视为高负载
+                NPU_HIGH_THRESHOLD: 90,   // NPU > 90% 视为高负载
+                LOAD_SUSTAIN_COUNT: 3,    // 连续 3 次 (6s) 才告警
+                LOAD_ALERT_COOLDOWN: 60000, // 同一类告警 60s 冷却
+
+                // 在 fetchStatus() 里调用，扫描 CPU/NPU 是否需要 6s 持续高负载告警
+                _checkLoadAlert() {
+                    if (!this.status) return;
+                    const now = Date.now();
+                    const cpu = Number(this.status.cpu);
+                    const npu = Number(this.status.npu);
+                    if (!Number.isFinite(cpu) || !Number.isFinite(npu)) return;
+
+                    // 忽略后端兜底默认值 (cpu=1, npu=14) — 这些是没读到真实值的占位
+                    const isCpuFallback = cpu === 1;
+                    const isNpuFallback = npu === 14;
+                    const st = this._loadAlertState;
+
+                    // CPU 高负载检测
+                    if (!isCpuFallback && cpu > this.CPU_HIGH_THRESHOLD) {
+                        st.cpuHighCount++;
+                        if (st.cpuHighCount >= this.LOAD_SUSTAIN_COUNT &&
+                            now - st.lastCpuAlertAt > this.LOAD_ALERT_COOLDOWN) {
+                            this._pushLocalNotification({
+                                type: 'warning',
+                                title: `CPU 持续高负载 (${cpu}%)`,
+                                details: `CPU 占用连续 ${this.LOAD_SUSTAIN_COUNT} 次 (约 ${this.LOAD_SUSTAIN_COUNT * 2}s) 超过 ${this.CPU_HIGH_THRESHOLD}%，系统可能出现卡顿，请检查是否有推理任务堆积或异常进程。`
+                            });
+                            this.showToast(`CPU 持续高负载：${cpu}%`, 'warning');
+                            st.lastCpuAlertAt = now;
+                            st.cpuHighCount = 0;
+                        }
+                    } else {
+                        st.cpuHighCount = 0;
+                    }
+
+                    // NPU 高负载检测
+                    if (!isNpuFallback && npu > this.NPU_HIGH_THRESHOLD) {
+                        st.npuHighCount++;
+                        if (st.npuHighCount >= this.LOAD_SUSTAIN_COUNT &&
+                            now - st.lastNpuAlertAt > this.LOAD_ALERT_COOLDOWN) {
+                            this._pushLocalNotification({
+                                type: 'warning',
+                                title: `NPU 持续高负载 (${npu}%)`,
+                                details: `NPU 占用连续 ${this.LOAD_SUSTAIN_COUNT} 次 (约 ${this.LOAD_SUSTAIN_COUNT * 2}s) 超过 ${this.NPU_HIGH_THRESHOLD}%，推理可能接近 NPU 算力上限，请检查摄像头路数或模型大小是否合理。`
+                            });
+                            this.showToast(`NPU 持续高负载：${npu}%`, 'warning');
+                            st.lastNpuAlertAt = now;
+                            st.npuHighCount = 0;
+                        }
+                    } else {
+                        st.npuHighCount = 0;
+                    }
+                },
+
+                // <img> @error 钩子: 只有"当前确实在拉这条流"时才算拉流失败
+                // (切到其他 tab 时 img 的 src 被置空, 浏览器会误报 error, 必须忽略)
+                _onStreamError(e, camId) {
+                    if (!camId) return;
+                    // 浏览器在 src 被 Alpine 置空时 (例如预览窗关闭瞬间) 也会触发 error,
+                    // 这是卸载造成的虚假错误, getAttribute('src') === '' 直接忽略
+                    if (e && e.target && !e.target.getAttribute('src')) return;
+                    if (!this._isActivelyMonitoring(camId)) return;
+                    this._setCamStatus(camId, false);
+                },
+
+                // <img> @load 钩子: 成功拉到画面 → 标记通道在线 (会自动补"通道恢复"通知)
+                _onStreamLoad(camId) {
+                    if (!camId) return;
+                    this._setCamStatus(camId, true);
+                },
+
+                // 一键重启推理引擎：调后端 /api/restart_engine，
+                // 后端回包后会自我退出，由 systemd / docker / 边缘盒子看护进程重新拉起
+                async restartEngine() {
+                    if (!confirm('确认重启推理引擎吗？\n进程会立刻退出，告警抓拍与 RTSP 解码会短暂中断（约 3-5 秒）。')) {
+                        return;
+                    }
+                    this.showToast('正在重启推理引擎...', 'info');
+                    // 先把指示灯主动置红，避免用户盯着看以为是没点中
+                    this.status.engine_online = false;
+                    try {
+                        await fetch('/api/restart_engine', { method: 'POST' });
+                        this.showToast('引擎已重启，等待看护进程拉起...', 'success');
+                    } catch (e) {
+                        // 进程退出那一刻请求会被中断，这里 catch 到是正常现象
+                        this.showToast('重启指令已发送，页面将在数秒后自动刷新', 'success');
+                    }
+                },
+
+                addCamera() {
+                    this.tempCamera = { id: '', name: '', category: '', url: '', tasks: [], model: '' };
+                    this.customTaskInput = '';
+                    this.tasksDropdownOpen = false;
+                    this.editingIndex = -1;
+                    // 新通道没有绑定模型, 清空上一次编辑残留的模型类别
+                    this.modelClassOptions = [];
+                    this.modelClassSource = '';
+                    this.modelClassesLoading = false;
+                    this.showCameraModal = true;
+                },
+
+                editCamera(index) {
+                    const cam = this.config.cameras[index];
+                    // cam.tasks 是数组 (后端存储格式), 直接 copy 一份给下拉框用.
+                    this.tempCamera = { id: cam.id, name: cam.name || '', category: cam.category || '', url: cam.url, tasks: (cam.tasks || []).slice(), model: cam.model || '' };
+                    this.customTaskInput = '';
+                    this.tasksDropdownOpen = false;
+                    this.editingIndex = index;
+                    // 通道已绑定模型: 把该模型的类别拉出来, 但 autoSelect=false,
+                    // 不能覆盖用户已经配好的 tasks.
+                    this.onModelChange(false);
+                    this.showCameraModal = true;
+                },
+
+                deleteCamera(index) {
+                    if (confirm("确定要删除该摄像头吗？")) {
+                        this.config.cameras.splice(index, 1);
+                        this.saveConfigToServer("已删除摄像头，底层服务已热重启。");
+                    }
+                },
+
+                // ---------- Tasks 多选下拉框辅助 ----------
+                // 点头部按钮: 开/关面板. 打开时按可视区剩余空间决定向下/向上展开, 并限制面板高度,
+                // 保证整块面板 (尤其底部"自定义类别"输入行) 始终留在屏幕内, 不被视口截断.
+                toggleTasksDropdown() {
+                    if (this.tasksDropdownOpen) {
+                        this.tasksDropdownOpen = false;
+                        return;
+                    }
+                    this.tasksDropdownOpen = true;
+                    // 等 x-show 把面板渲染出来后再量高度.
+                    this.$nextTick(() => {
+                        const wrap = this.$refs.tasksWrap;
+                        if (!wrap) return;
+                        const rect = wrap.getBoundingClientRect();
+                        const gap = 8;          // 面板与触发框/屏幕边缘的间距
+                        const minH = 140;       // 面板最小高度 (够显示几行 + 输入行)
+                        const prefH = 288;      // 面板理想高度 (≈18rem)
+                        const spaceBelow = window.innerHeight - rect.bottom - gap;
+                        const spaceAbove = rect.top - gap;
+                        // 下方放得下理想高度就向下; 否则下方明显不足且上方更宽裕时向上弹开.
+                        const openUp = spaceBelow < prefH && spaceAbove > spaceBelow;
+                        const avail = openUp ? spaceAbove : spaceBelow;
+                        this.tasksDropdownUp = openUp;
+                        this.tasksPanelMaxH = Math.max(minH, Math.min(prefH, avail));
+                    });
+                },
+                // 告警中心"类别下拉框"开关: 同 Tasks 下拉框, 按可视区剩余空间决定上下展开.
+                toggleAlarmCategoryDropdown() {
+                    if (this.alarmCategoryDropdownOpen) {
+                        this.alarmCategoryDropdownOpen = false;
+                        return;
+                    }
+                    this.alarmCategoryDropdownOpen = true;
+                    this.$nextTick(() => {
+                        const wrap = this.$refs.alarmCatWrap;
+                        if (!wrap) return;
+                        const rect = wrap.getBoundingClientRect();
+                        const gap = 8;
+                        const minH = 140;
+                        const prefH = 320;        // 告警下拉框理想高度稍大, 因为每项有图例+徽章
+                        const spaceBelow = window.innerHeight - rect.bottom - gap;
+                        const spaceAbove = rect.top - gap;
+                        const openUp = spaceBelow < prefH && spaceAbove > spaceBelow;
+                        const avail = openUp ? spaceAbove : spaceBelow;
+                        this.alarmCatUp = openUp;
+                        this.alarmCatPanelMaxH = Math.max(minH, Math.min(prefH, avail));
+                    });
+                },
+                // 当前可用的所有类别选项 (预设 > 自定义, 按 key 去重), 供下拉面板渲染.
+                // 选中模型后拉取它的类别文件.
+                // autoSelect=true  用户刚切换模型 → tasks 重置为该模型的全部类别并默认全选
+                // autoSelect=false 打开已有通道编辑 → 只加载类别, 不动已配好的 tasks
+                async onModelChange(autoSelect) {
+                    const m = this.tempCamera.model;
+                    this.modelClassOptions = [];
+                    this.modelClassSource = '';
+
+                    if (!m) {
+                        this.modelClassesLoading = false;
+                        return;
+                    }
+
+                    this.modelClassesLoading = true;
+                    try {
+                        const res = await fetch('/api/model_classes?name=' + encodeURIComponent(m), { cache: 'no-store' });
+                        if (!res.ok) throw new Error('HTTP ' + res.status);
+                        const d = await res.json();
+                        const list = Array.isArray(d.classes) ? d.classes.filter(c => c && c.key) : [];
+
+                        this.modelClassOptions = list;
+                        this.modelClassSource = (list.length > 0 && d.source === 'sidecar') ? 'sidecar' : 'none';
+
+                        if (this.modelClassSource === 'sidecar' && autoSelect) {
+                            // 默认全选: 换模型后旧 tasks 大概率是新模型没有的类别,
+                            // 留着就是无效配置 (永远匹配不上, 通道静默不告警).
+                            this.tempCamera.tasks = list.map(c => c.key);
+                        }
+                    } catch (e) {
+                        console.error('Failed to fetch model classes', e);
+                        this.modelClassSource = 'none';
+                    }
+                    this.modelClassesLoading = false;
+                },
+
+                availableClassOptions() {
+                    // 模型自带类别文件(sidecar)时, 只暴露该模型能检测的类别.
+                    // 勾一个模型压根检测不到的 key, 结果是该通道永远不告警, 且界面上看不出异常,
+                    // 所以直接从源头不给选.
+                    if (this.modelClassSource === 'sidecar' && (this.modelClassOptions || []).length > 0) {
+                        return (this.modelClassOptions || []).map(c => ({
+                            key: c.key,
+                            label: c.label || c.key,
+                            isModel: true,
+                        }));
+                    }
+                    // 没绑模型 / 模型没有类别文件: 退回预设类别 + 自定义类别
+                    const seen = new Set();
+                    const out = [];
+                    for (const o of (this.presetClassOptions || [])) {
+                        if (!seen.has(o.key)) { seen.add(o.key); out.push(o); }
+                    }
+                    for (const o of (this.customClassOptions || [])) {
+                        if (!seen.has(o.key)) { seen.add(o.key); out.push(o); }
+                    }
+                    return out;
+                },
+                // 头部按钮显示的摘要文字: "已选 N 项: 山体滑坡, 道路塌陷, ..." 或 "选择任务类别..."
+                tasksDisplayText() {
+                    const sel = this.tempCamera.tasks || [];
+                    if (sel.length === 0) return '选择任务类别 (可多选, 可自定义)';
+                    // 找 label, 没有就回退到 key
+                    const lookup = {};
+                    for (const o of this.availableClassOptions()) lookup[o.key] = o.label || o.key;
+                    const summary = sel.map(k => lookup[k] || k).join(', ');
+                    return '已选 ' + sel.length + ' 项: ' + summary;
+                },
+                // 已知 key 的中文 label (用于已选 chip 显示). 找不到就回退到 key 本身.
+                labelForKey(key) {
+                    // 先查模型类别表: 编辑一个绑定了新模型的通道时, 它的 tasks key
+                    // 可能只存在于模型 sidecar 里, preset 表里没有.
+                    for (const o of (this.modelClassOptions || [])) if (o.key === key) return o.label || o.key;
+                    for (const o of (this.presetClassOptions || [])) if (o.key === key) return o.label || o.key;
+                    for (const o of (this.customClassOptions || [])) if (o.key === key) return o.label || o.key;
+                    return key;
+                },
+                // checkbox / 已选 chip 关闭按钮 / 加自定义按钮 共用的 toggle: 命中移除, 未命中追加.
+                toggleTaskKey(key) {
+                    if (!this.tempCamera.tasks) this.tempCamera.tasks = [];
+                    const idx = this.tempCamera.tasks.indexOf(key);
+                    if (idx >= 0) this.tempCamera.tasks.splice(idx, 1);
+                    else this.tempCamera.tasks.push(key);
+                },
+                // 自定义输入框添加 (回车 / 点添加按钮). 写入 customClassOptions + 自动勾选.
+                addCustomTask() {
+                    const v = (this.customTaskInput || '').trim();
+                    if (!v) return;
+                    if (!this.customClassOptions.find(o => o.key === v)) {
+                        this.customClassOptions.push({ key: v, label: v, isCustom: true });
+                    }
+                    if (!this.tempCamera.tasks) this.tempCamera.tasks = [];
+                    if (!this.tempCamera.tasks.includes(v)) this.tempCamera.tasks.push(v);
+                    this.customTaskInput = '';
+                },
+                // 删除一个自定义类别 (从 customClassOptions 移除, 若已勾选也一并从当前 tempCamera.tasks 取消).
+                // 不弹确认: 重新添加成本低; 但如果未来改成"永久删除历史通道引用"再加 confirm.
+                deleteCustomCategory(key) {
+                    this.customClassOptions = (this.customClassOptions || []).filter(o => o.key !== key);
+                    if (this.tempCamera.tasks && this.tempCamera.tasks.includes(key)) {
+                        this.tempCamera.tasks = this.tempCamera.tasks.filter(k => k !== key);
+                    }
+                },
+
+                saveCamera() {
+                    if (!this.tempCamera.id || !this.tempCamera.url) {
+                        alert("Camera ID 和 URL 不能为空");
+                        return;
+                    }
+                    const newCam = {
+                        id: this.tempCamera.id,
+                        name: this.tempCamera.name,
+                        // category 是可选的元数据, 空字符串就当未填, 前端 x-show 会隐藏.
+                        category: (this.tempCamera.category || '').trim(),
+                        url: this.tempCamera.url,
+                        // tempCamera.tasks 现在已经是数组, slice() 防止与编辑索引共享引用.
+                        tasks: (this.tempCamera.tasks || []).slice(),
+                        model: this.tempCamera.model || ''
+                    };
+
+                    if (this.editingIndex === -1) {
+                        this.config.cameras.push(newCam);
+                    } else {
+                        this.config.cameras[this.editingIndex] = newCam;
+                    }
+                    this.showCameraModal = false;
+                    this.saveConfigToServer("摄像头配置已保存，底层服务已热重启！");
+                },
+
+                saveMqttConfig() {
+                    if (this.config.mqtt_servers && Array.isArray(this.config.mqtt_servers)) {
+                        this.config.mqtt_servers.forEach(s => {
+                            s.enabled = (s.enabled === true || s.enabled === 'true' || s.enabled == 1);
+                            s.use_domain = (s.use_domain === true || s.use_domain === 'true' || s.use_domain == 1);
+                        });
+                        if (this.config.mqtt_servers[this.serverTab]) {
+                            this.config.mqtt = { ...this.config.mqtt_servers[this.serverTab] };
+                        }
+                    }
+                    this.saveConfigToServer("服务器 " + (this.serverTab + 1) + " MQTT 配置已保存！");
+                    if (this.config.mqtt_servers && Array.isArray(this.config.mqtt_servers)) {
+                        this.config.mqtt_servers.forEach(s => {
+                            s.enabled = String(s.enabled);
+                        });
+                    }
+                },
+
+                isMqttActive() {
+                    if (this.config && this.config.mqtt_servers && this.config.mqtt_servers[0]) {
+                        const en = this.config.mqtt_servers[0].enabled;
+                        return en === true || en === 'true' || en == 1;
+                    }
+                    if (this.config && this.config.mqtt) {
+                        const en = this.config.mqtt.enabled;
+                        return en === true || en === 'true' || en == 1;
+                    }
+                    return false;
+                },
+
+                async saveConfigToServer(successMsg = "配置已保存，系统热重启完毕！") {
+                    try {
+                        const res = await fetch('/api/config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.config, null, 4)
+                        });
+                        if (res.ok) {
+                            this.showToast(successMsg);
+                            // 配置保存导致后端热重启，因此所有旧连接已失效。
+                            // 更新所有摄像头的 streamKey 强制前端重新拉流。
+                            const now = Date.now();
+                            if (this.config && this.config.cameras) {
+                                this.config.cameras.forEach(c => {
+                                    this.camStreamKey[c.id] = now;
+                                });
+                            }
+                        } else {
+                            alert("保存失败！");
+                        }
+                    } catch (e) {
+                        alert("网络异常，无法保存");
+                    }
+                },
+
+                async fetchAlarms() {
+                    try {
+                        const res = await fetch('/api/alerts', { cache: 'no-store' });
+                        this.alarms = await res.json();
+                        // 不再 reverse()：后端 /api/alerts 已经按文件名字典序倒序返回（最新在前），
+                        // 之前 directory_iterator 是 inode 顺序无序，所以前端需要 reverse 来尝试稳定；
+                        // 现在后端已稳定排序，前端不要再翻，否则会把最新的翻到末尾。
+                    } catch (e) { console.error('Failed to fetch alarms'); }
+                },
+
+                async deleteSingleAlarm(imageUrl) {
+                    if (confirm("确定要删除这张告警图吗？")) {
+                        try {
+                            const filename = imageUrl.split('/').pop();
+                            const res = await fetch(`/api/alerts?filename=${encodeURIComponent(filename)}`, { method: 'DELETE' });
+                            if (res.ok) {
+                                this.showToast("告警图已删除", "success");
+                                // 从前端列表里立刻移除，不完全依赖 fetchAlarms 的延迟
+                                this.alarms = this.alarms.filter(a => a.image !== imageUrl);
+                            } else {
+                                this.showToast("删除失败", "error");
+                            }
+                        } catch(e) {
+                            console.error(e);
+                        }
+                    }
+                },
+
+                async clearAlarms() {
+                    if (confirm("确定要清空所有历史告警图片吗？操作不可恢复！")) {
+                        try {
+                            const res = await fetch('/api/alerts', { method: 'DELETE' });
+                            if (res.ok) {
+                                this.showToast("告警数据已清空");
+                                this.fetchAlarms();
+                            } else {
+                                alert("清空失败");
+                            }
+                        } catch (e) {
+                            alert("请求出错");
+                        }
+                    }
+                },
+
+                // ===== 告警中心批量删除 =====
+                // 进出批量选择模式. 退出时清空选中, 避免下次进入带着上一轮的旧选中.
+                toggleAlarmSelectMode() {
+                    this.alarmSelectMode = !this.alarmSelectMode;
+                    if (!this.alarmSelectMode) this.selectedAlarms = [];
+                },
+
+                isAlarmSelected(alarm) {
+                    return this.selectedAlarms.includes(alarm.image);
+                },
+
+                toggleAlarmSelection(alarm) {
+                    const i = this.selectedAlarms.indexOf(alarm.image);
+                    if (i >= 0) this.selectedAlarms.splice(i, 1);
+                    else this.selectedAlarms.push(alarm.image);
+                },
+
+                // 全选/取消全选: 只作用于当前筛选后的列表 (不是全部 alarms),
+                // 这样"按类别/日期筛完再全选"符合直觉, 不会误删筛掉的图.
+                toggleSelectAllFiltered() {
+                    const list = this.filteredAlarms;
+                    if (this.allFilteredSelected) {
+                        const paths = new Set(list.map(a => a.image));
+                        this.selectedAlarms = this.selectedAlarms.filter(p => !paths.has(p));
+                    } else {
+                        const merged = new Set(this.selectedAlarms);
+                        for (const a of list) merged.add(a.image);
+                        this.selectedAlarms = Array.from(merged);
+                    }
+                },
+
+                // 卡片点击: 选择模式下切换选中, 普通模式下才放大预览
+                onAlarmCardClick(alarm) {
+                    if (this.alarmSelectMode) {
+                        this.toggleAlarmSelection(alarm);
+                        return;
+                    }
+                    this.openImagePreview(alarm);
+                },
+
+                async deleteSelectedAlarms() {
+                    const n = this.selectedAlarms.length;
+                    if (n === 0) {
+                        this.showToast("请先选择要删除的告警图", "error");
+                        return;
+                    }
+                    if (!confirm(`确定要删除选中的 ${n} 张告警图吗？操作不可恢复！`)) return;
+
+                    const filenames = this.selectedAlarms.map(p => p.split('/').pop());
+                    try {
+                        const res = await fetch('/api/alerts/batch-delete', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ filenames })
+                        });
+                        if (!res.ok) {
+                            this.showToast("批量删除失败", "error");
+                            return;
+                        }
+                        const data = await res.json();
+
+                        // 先从本地列表摘掉, 不等轮询刷新, 界面立刻响应
+                        const removed = new Set(this.selectedAlarms);
+                        this.alarms = this.alarms.filter(a => !removed.has(a.image));
+                        this.selectedAlarms = [];
+                        this.alarmSelectMode = false;
+
+                        if (data.failed) {
+                            this.showToast(`已删除 ${data.deleted} 张，${data.failed} 张失败（可能已被删除）`, "error");
+                        } else {
+                            this.showToast(`已删除 ${data.deleted} 张告警图`, "success");
+                        }
+                        this.fetchAlarms();
+                    } catch (e) {
+                        console.error(e);
+                        this.showToast("请求出错", "error");
+                    }
+                },
+
+                async fetchNotifications() {
+                    try {
+                        const res = await fetch('/api/notifications');
+                        if (res.ok) {
+                            const backend = await res.json();
+                            // 用 id 合并: 后端通知覆盖本地重复项，保留纯本地的 id 不被覆盖
+                            // 这样前端 push 的流告警 / 负载告警不会被 3s 轮询清掉
+                            const localOnly = (this.notifications || []).filter(n => n.local);
+                            const seen = new Set();
+                            const merged = [];
+                            // 本地优先 (local fresh) — 避免用户刚看到就被后端相同 id 顶掉
+                            for (const n of localOnly) {
+                                seen.add(n.id);
+                                merged.push(n);
+                            }
+                            for (const n of backend) {
+                                if (seen.has(n.id)) continue;
+                                seen.add(n.id);
+                                merged.push(n);
+                            }
+                            // 总体按 id 长度粗略排序: 带 timestamp 的本地通知 id 较长, 排前面
+                            this.notifications = merged;
+                        }
+                    } catch (e) { }
+                },
+
+                async openNotification(n) {
+                    this.activeNotif = n;
+                    this.showNotifModal = true;
+                    this.showNotifications = false;
+
+                    if (!n.read) {
+                        try {
+                            await fetch('/api/notifications/read', {
+                                method: 'POST',
+                                body: JSON.stringify({ id: n.id })
+                            });
+                            n.read = true;
+                        } catch (e) { }
+                    }
+                },
+
+                async markAllAsRead() {
+                    try {
+                        await fetch('/api/notifications/read', {
+                            method: 'POST',
+                            body: JSON.stringify({ all: true })
+                        });
+                        this.notifications.forEach(n => n.read = true);
+                        this.showToast("已全部标记为已读", "success");
+                    } catch (e) { }
+                },
+
+                async clearNotifications() {
+                    if (!Array.isArray(this.notifications) || this.notifications.length === 0) {
+                        // 没有通知时也提示一下，避免用户以为按钮没生效
+                        this.showToast("当前没有可清空的通知", "info");
+                        return;
+                    }
+                    if (!confirm("确定要清空所有 " + this.notifications.length + " 条系统通知吗？")) {
+                        return;
+                    }
+                    // 立刻在前端把列表清空，给用户即时反馈；3 秒轮询会和后端真实状态重新对齐
+                    this.notifications = [];
+                    this.showNotifications = false;
+                    try {
+                        const res = await fetch('/api/notifications', { method: 'DELETE' });
+                        if (res.ok) {
+                            this.showToast("系统通知已清空");
+                        } else {
+                            this.showToast("清空失败：HTTP " + res.status, "error");
+                        }
+                    } catch (e) {
+                        this.showToast("清空失败：" + (e && e.message ? e.message : '网络异常'), "error");
+                    }
+                },
+
+                initChart() {
+                    const canvas = document.getElementById('sysChart');
+                    if (!canvas) return;
+                    const ctx = canvas.getContext('2d');
+
+                    const npuGradient = ctx.createLinearGradient(0, 0, 0, 300);
+                    npuGradient.addColorStop(0, 'rgba(0, 210, 255, 0.4)');
+                    npuGradient.addColorStop(1, 'rgba(0, 210, 255, 0)');
+
+                    const cpuGradient = ctx.createLinearGradient(0, 0, 0, 300);
+                    cpuGradient.addColorStop(0, 'rgba(168, 85, 247, 0.4)');
+                    cpuGradient.addColorStop(1, 'rgba(168, 85, 247, 0)');
+
+                    canvas.chartInstance = new Chart(canvas, {
+                        type: 'line',
+                        data: {
+                            labels: Array(15).fill('').map((_, i) => {
+                                const d = new Date();
+                                d.setSeconds(d.getSeconds() - (15 - i) * 2);
+                                return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                            }),
+                            datasets: [
+                                {
+                                    label: 'NPU 负载 (%)',
+                                    data: Array(15).fill(0).map(() => 14 + Math.random() * 3),
+                                    borderColor: '#00d2ff',
+                                    backgroundColor: npuGradient,
+                                    borderWidth: 2,
+                                    fill: true,
+                                    tension: 0.4,
+                                    pointRadius: 0
+                                },
+                                {
+                                    label: 'CPU 负载 (%)',
+                                    data: Array(15).fill(0).map(() => 1 + Math.random() * 3),
+                                    borderColor: '#a855f7',
+                                    backgroundColor: cpuGradient,
+                                    borderWidth: 2,
+                                    fill: true,
+                                    tension: 0.4,
+                                    pointRadius: 0
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { labels: { color: '#94a3b8', font: { family: 'Inter' } } } },
+                            scales: {
+                                y: { min: 0, max: 100, grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#64748b' } },
+                                x: { grid: { display: false }, ticks: { color: '#64748b', maxTicksLimit: 8 } }
+                            }
+                        }
+                    });
+                },
+
+                async fetchStatus() {
+                    try {
+                        const res = await fetch('/api/status');
+                        const data = await res.json();
+                        this.status = data;
+
+                        // CPU / NPU 高负载监测 (基于 /api/status 返回的 cpu / npu 字段)
+                        this._checkLoadAlert();
+
+                        // 把后端声明的模型类别同步到前端 modelClasses，驱动 UI 自适应
+                        if (Array.isArray(data.model_classes)) {
+                            const seen = new Set();
+                            const tasks = [];
+                            for (const c of data.model_classes) {
+                                if (!c || !c.key || seen.has(c.key)) continue;
+                                seen.add(c.key);
+                                const style = this._classStyle[c.key] || this._defaultStyle;
+                                tasks.push({
+                                    key: c.key,
+                                    label: c.label || c.key,
+                                    color: style.color,
+                                    bg: style.bg,
+                                    activeClass: style.activeClass,
+                                });
+                            }
+                            // 保留旧值（避免被后端空响应清空）仅当新值非空时
+                            if (tasks.length > 0) this.modelClasses = tasks;
+                        }
+
+                        // 动态更新折线图趋势
+                        const canvas = document.getElementById('sysChart');
+                        if (canvas && canvas.chartInstance) {
+                            const chart = canvas.chartInstance;
+                            const nowTime = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+                            chart.data.labels.shift();
+                            chart.data.labels.push(nowTime);
+
+                            // 如果后端处于兜底默认值，加一点自然的波动效果
+                            let simNpu = data.npu;
+                            let simCpu = data.cpu;
+                            if (simNpu === 14) simNpu += Math.floor(Math.random() * 3) - 1; // 13 ~ 15
+                            if (simCpu === 1) simCpu += Math.floor(Math.random() * 3);      // 1 ~ 3
+
+                            chart.data.datasets[0].data.shift();
+                            chart.data.datasets[0].data.push(simNpu);
+
+                            chart.data.datasets[1].data.shift();
+                            chart.data.datasets[1].data.push(simCpu);
+
+                            chart.update('none');
+                        }
+                    } catch (e) {
+                        console.error('Failed to fetch status', e);
+                        // 拉不到 /api/status 视为引擎已失联，左下角指示灯自动转红
+                        this.status.engine_online = false;
+                    }
+                },
+
+                async testMqtt() {
+                    this.showToast('正在向 MQTT Broker 发送测试推送...', 'info');
+                    try {
+                        const res = await fetch('/api/test_mqtt');
+                        const data = await res.json();
+                        if (data.status === 'success') {
+                            this.showToast('MQTT 测试推送成功！请在 MQTTX 查看接收消息', 'success');
+                        } else {
+                            alert('MQTT 推送失败!\n退出码: ' + data.exit_code + '\n输出: ' + (data.output || '无输出') + '\n执行命令: ' + data.command);
+                        }
+                    } catch (e) {
+                        this.showToast('请求测试接口失败: ' + e.message, 'error');
+                    }
+                },
+
+                async fetchConfig() {
+                    try {
+                        const res = await fetch('/api/config');
+                        this.config = await res.json();
+                        if (!this.config.mqtt_servers || !Array.isArray(this.config.mqtt_servers) || this.config.mqtt_servers.length < 3) {
+                            const def1 = this.config.mqtt || { enabled: true, server: "139.196.123.7", port: 8492, topic: "$data", use_domain: false, username: "", password: "", client_id: "box_001" };
+                            const def2 = { enabled: false, server: "192.168.1.100", port: 1883, topic: "$data", use_domain: false, username: "", password: "", client_id: "box_002" };
+                            const def3 = { enabled: false, server: "192.168.1.200", port: 1883, topic: "$data", use_domain: false, username: "", password: "", client_id: "box_003" };
+                            this.config.mqtt_servers = [
+                                { ...def1 },
+                                (this.config.mqtt_servers && this.config.mqtt_servers[1]) || def2,
+                                (this.config.mqtt_servers && this.config.mqtt_servers[2]) || def3
+                            ];
+                        }
+                        if (this.config.mqtt_servers && Array.isArray(this.config.mqtt_servers)) {
+                            this.config.mqtt_servers.forEach(s => {
+                                s.enabled = (s.enabled === true || s.enabled === 'true' || s.enabled == 1) ? 'true' : 'false';
+                                s.use_domain = (s.use_domain === true || s.use_domain === 'true' || s.use_domain == 1);
+                            });
+                        }
+                    } catch (e) {
+                        console.error(e);
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+
+</html>

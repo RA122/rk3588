@@ -1,0 +1,116 @@
+{
+  "system": {
+    "inference_fps": 5,
+    "log_level": "INFO"
+  },
+  "auth": {
+    "enabled": false,
+    "username": "admin",
+    "password": "admin123"
+  },
+  "cameras": [
+    {
+      "id": "D1",
+      "name": "北走廊",
+      "url": "rtsp://admin:YF20212021@192.168.110.96:554/Streaming/Channels/101",
+      "roi": [],
+      "tasks": []
+    },
+    {
+      "id": "D2",
+      "name": "办公区",
+      "url": "rtsp://admin:YF20212021@192.168.110.96:554/Streaming/Channels/101",
+      "roi": [],
+      "tasks": []
+    },
+    {
+      "id": "D3",
+      "name": "办公区1",
+      "url": "rtsp://admin:Yunfan%402025@192.168.110.86:554/Streaming/Channels/302",
+      "roi": [],
+      "tasks": []
+    },
+    {
+      "id": "D4",
+      "name": "操作间1",
+      "url": "rtsp://admin:Yunfan%402025@192.168.110.86:554/Streaming/Channels/402",
+      "roi": [],
+      "tasks": []
+    },
+    {
+      "id": "D5",
+      "name": "操作间",
+      "url": "rtsp://admin:Yunfan%402025@192.168.110.86:554/Streaming/Channels/502",
+      "roi": [],
+      "tasks": []
+    },
+    {
+      "id": "D6",
+      "name": "东走廊",
+      "url": "rtsp://admin:Yunfan%402025@192.168.110.86:554/Streaming/Channels/602",
+      "roi": [],
+      "tasks": []
+    },
+    {
+      "id": "D7",
+      "name": "前厅",
+      "url": "rtsp://admin:Yunfan%402025@192.168.110.86:554/Streaming/Channels/702",
+      "roi": [],
+      "tasks": []
+    },
+    {
+      "id": "D8",
+      "name": "操作间1",
+      "url": "rtsp://admin:Yunfan%402025@192.168.110.86:554/Streaming/Channels/802",
+      "roi": [],
+      "tasks": []
+    }
+  ],
+  "mqtt": {
+    "enabled": true,
+    "server": "139.196.123.7",
+    "port": 8492,
+    "topic": "$data",
+    "use_domain": false,
+    "username": "",
+    "password": "",
+    "client_id": "box_001"
+  },
+  "mqtt_servers": [
+    {
+      "enabled": true,
+      "server": "139.196.123.7",
+      "port": 8492,
+      "topic": "$data",
+      "use_domain": false,
+      "username": "",
+      "password": "",
+      "client_id": "box_001"
+    },
+    {
+      "enabled": false,
+      "server": "192.168.1.100",
+      "port": 1883,
+      "topic": "$data",
+      "use_domain": false,
+      "username": "",
+      "password": "",
+      "client_id": "box_002"
+    },
+    {
+      "enabled": false,
+      "server": "192.168.1.200",
+      "port": 1883,
+      "topic": "$data",
+      "use_domain": false,
+      "username": "",
+      "password": "",
+      "client_id": "box_003"
+    }
+  ],
+  "storage": {
+    "local_path": "./alerts",
+    "max_size_mb": 200,
+    "retention_days": 7
+  }
+}
